@@ -96,7 +96,7 @@ permissions:
   pull-requests: read
 jobs:
   attestation:
-    uses: mr-rob0to/agent-skills/.github/workflows/ship-attestation.yml@main
+    uses: mr-rob0to/agent-plugins/.github/workflows/ship-attestation.yml@main
 ```
 
 The check passes when the body carries exactly one attestation, it names the

@@ -1,6 +1,6 @@
 {
   "name": "mr-rob0to",
-  "description": "Skills for coding agents, grouped into plugins by purpose. Each skill is a self-contained folder that works in Claude Code, Codex, and any harness that reads SKILL.md folders.",
+  "description": "Plugins for coding agents, grouped by purpose: skills, hooks and Claude Code mods. Skills are self-contained folders that work in Claude Code, Codex, and any harness that reads SKILL.md folders.",
   "owner": {
     "name": "mr-rob0to"
   },
@@ -14,6 +14,11 @@
       "name": "worktree-setup",
       "source": "./plugins/worktree-setup",
       "description": "Worktree sessions. At session start, tells the agent whether it is in a linked worktree and runs the repo's make worktree-setup target when the repo declares one."
+    },
+    {
+      "name": "release-radar",
+      "source": "./plugins/release-radar",
+      "description": "Release status. A Claude Code pane, opened with /releases, that shows what is coming in the next release and what shipped in past releases of any GitHub repo."
     }
   ]
 }

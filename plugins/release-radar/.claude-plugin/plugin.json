@@ -1,0 +1,33 @@
+{
+  "name": "release-radar",
+  "version": "0.2.0",
+  "description": "Release radar. A pane that shows what is coming in the next release and what shipped in past releases of any GitHub repo, summarized in plain language.",
+  "author": {
+    "name": "mr-rob0to"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "githubToken": {
+      "type": "string",
+      "title": "GitHub token",
+      "description": "Optional. A GitHub token with read access to your repos. Leave empty to use the GitHub CLI's login (gh auth login).",
+      "sensitive": true,
+      "required": false,
+      "default": ""
+    },
+    "extraRepos": {
+      "type": "string",
+      "title": "Extra repos",
+      "description": "Optional. Comma-separated owner/name repos to always list, e.g. vercel/next.js, facebook/react",
+      "required": false,
+      "default": ""
+    },
+    "summaryModel": {
+      "type": "string",
+      "title": "Summary model",
+      "description": "Model that writes the plain-language summaries. Set to 'off' to show the raw change list only.",
+      "required": false,
+      "default": "haiku"
+    }
+  }
+}
