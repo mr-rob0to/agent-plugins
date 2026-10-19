@@ -1,7 +1,8 @@
-# agent-skills
+# agent-plugins
 
-Skills for coding agents, grouped into plugins by purpose. Each skill is a
-self-contained folder, a `SKILL.md` with its helpers beside it, so the same
+Plugins for coding agents, grouped by purpose. A plugin holds skills, hooks, a
+Claude Code mod (a pane or command inside Claude Code), or a mix. Each skill is
+a self-contained folder, a `SKILL.md` with its helpers beside it, so the same
 folder works in Claude Code, in Codex, and in any harness that reads skill
 folders.
 
@@ -9,6 +10,7 @@ folders.
 |---|---|---|
 | [`qed`](plugins/qed/README.md) | Software delivery | `ship` |
 | [`worktree-setup`](plugins/worktree-setup/README.md) | Worktree sessions | none; a `SessionStart` hook |
+| [`release-radar`](plugins/release-radar/README.md) | Release status | none; a Claude Code pane, `/releases` |
 
 ## Install
 
@@ -18,7 +20,7 @@ Pick your harness. Each path installs the `qed` plugin, whose one skill today is
 **Claude Code**
 
 ```bash
-claude plugin marketplace add mr-rob0to/agent-skills
+claude plugin marketplace add mr-rob0to/agent-plugins
 claude plugin install qed@mr-rob0to
 ```
 
@@ -28,7 +30,7 @@ defines a skill of that name.
 **Codex**
 
 ```bash
-codex plugin marketplace add mr-rob0to/agent-skills
+codex plugin marketplace add mr-rob0to/agent-plugins
 codex plugin add qed@mr-rob0to
 ```
 
@@ -40,10 +42,13 @@ is named `ship`.
 `codex plugin add worktree-setup@mr-rob0to`. Codex asks you to trust its hook
 once. It has no skill to copy into other harnesses.
 
+**`release-radar`** is Claude Code only:
+`claude plugin install release-radar@mr-rob0to`, then type `/releases`.
+
 **Any other harness**
 
 ```bash
-npx skills add mr-rob0to/agent-skills --skill ship
+npx skills add mr-rob0to/agent-plugins --skill ship
 ```
 
 Or copy the folder from a clone of this repository:

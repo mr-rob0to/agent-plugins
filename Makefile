@@ -19,8 +19,17 @@ $(addprefix plugin/,$(PLUGINS)): plugin/%:
 	done
 	@if ls "plugins/$*"/tests/*.bats >/dev/null 2>&1; then \
 	  cd "plugins/$*" && $(BATS) tests; \
-	else \
+	elif [ -z "$$(find "plugins/$*/tests" -name '*.test.ts*' 2>/dev/null)" ]; then \
 	  echo "plugins/$*: no tests yet"; \
+	fi
+	@# A Claude Code mod's tests run under claude itself. CI does not install
+	@# it, for the same reason as validate below.
+	@if [ -n "$$(find "plugins/$*/tests" -name '*.test.ts*' 2>/dev/null)" ]; then \
+	  if command -v claude >/dev/null 2>&1; then \
+	    claude plugin test "plugins/$*" || exit 1; \
+	  else \
+	    echo "claude is not on PATH; skipping claude plugin test plugins/$*"; \
+	  fi; \
 	fi
 
 # macOS ships bash 3.2 as /bin/bash, and every script finds bash through PATH.

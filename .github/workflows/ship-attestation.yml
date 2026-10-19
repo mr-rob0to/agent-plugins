@@ -13,7 +13,7 @@ name: ship-attestation
 #     pull-requests: read
 #   jobs:
 #     attestation:
-#       uses: mr-rob0to/agent-skills/.github/workflows/ship-attestation.yml@main
+#       uses: mr-rob0to/agent-plugins/.github/workflows/ship-attestation.yml@main
 #
 # `edited` is in the list because the gate pushes first and rebuilds the body
 # after: the run on the push is red until the body names the new head, and the
@@ -24,7 +24,7 @@ on:
   workflow_call:
     inputs:
       qed-ref:
-        description: The agent-skills ref whose ship-attest-check runs.
+        description: The agent-plugins ref whose ship-attest-check runs.
         type: string
         default: main
 
@@ -39,7 +39,7 @@ jobs:
       # Pinned to a commit, not a tag: a tag can be moved to point at other code.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          repository: mr-rob0to/agent-skills
+          repository: mr-rob0to/agent-plugins
           ref: ${{ inputs.qed-ref }}
           path: .qed
           persist-credentials: false
