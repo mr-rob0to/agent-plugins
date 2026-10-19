@@ -146,6 +146,45 @@ test('shows upcoming changes with a summary, on every surface with a pane', asyn
   }
 })
 
+// A returning user: session.start puts the last repo back as the selection
+// before the repo list loads. The pane must still load that repo's releases
+// rather than wait on "Loading releases" until someone presses Refresh.
+test('loads the releases of the repo it remembered from the last session', async ($, on) => {
+  mock.store(on, { lastSelected: REPO })
+  on('command.register', async () => ({ value: undefined }))
+  on('session.start', async (_$, e) => e)
+  mock.clock(on, { now: 1_800_000_000_000 })
+  on('process.run', async (_$, e) => {
+    const stdout = e.argv[0] === 'gh' ? 'test-token\n' : `git@github.com:${REPO}.git\n`
+
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('http.fetch', async (_$, e) => {
+    const body = API[e.url.replace('https://api.github.com', '')]
+
+    return {
+      value:
+        body === undefined
+          ? { status: 404, ok: false, headers: {}, text: '{}' }
+          : { status: 200, ok: true, headers: {}, text: JSON.stringify(body) },
+    }
+  })
+  on('model.complete', async () => ({ value: { isAnswered: false as const, reason: 'refused' } }))
+
+  await $.session.start({ cwd: '/tmp/project' } as never)
+  const ui = await $.ui.mount({
+    plugin: 'release-radar',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'release-radar',
+    props: PANE_PROPS,
+  })
+  await ui.press({ key: 'reload-repos' })
+
+  expect((await ui.find({ key: 'section:upcoming' }))?.text).toContain('2 changes')
+  await ui.unmount()
+})
+
 // A repo that tags every release but only published a GitHub Release for an old
 // pre-release. The upcoming section must start at the newest tag, not at the
 // newest Release, or it lists months of already-shipped work as "upcoming".

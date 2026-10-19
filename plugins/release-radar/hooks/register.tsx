@@ -282,7 +282,8 @@ async function loadRepos($: EngineInterface): Promise<void> {
 
   const selected = await read($, selectedAtom)
   const pick = selected ?? unique[0]
-  if (pick && pick !== selected) await selectRepo($, pick)
+  // A selection restored at session start has no view yet, so load it too.
+  if (pick && (pick !== selected || (await read($, viewAtom)) === null)) await selectRepo($, pick)
 }
 
 async function selectRepo($: EngineInterface, repo: string, force = false): Promise<void> {
