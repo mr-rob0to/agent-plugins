@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+# Scores a reviewer command line against a folder of cases: commits with a
+# known bug at a known place, and commits with none. For each case it builds a
+# throwaway clone where origin/eval-base is the parent and HEAD is the commit,
+# sends the reviewer the prompt the gate would send, reads the answer with
+# ship-findings parse, and says whether the known bug was reported.
+#
+#   score <cases dir> [--security] -- <reviewer command line>
+#
+# A case is a file ending in .case holding key=value lines:
+#   repo         a path to a repository, or the word fixture
+#   commit       the commit to review (a SHA), or for a fixture the file name
+#                under tests/fixtures/security-review
+#   parent       the commit the review is against (a SHA); omitted for a fixture
+#   paths        optional, space-separated: only these paths of the commit reach
+#                the reviewer, as one commit on top of the parent
+#   expect       bug or clean
+#   file, lines  where the bug is: a path and a range a-b (bug cases)
+#   must_report  one sentence saying what a reviewer has to say (bug cases)
+#   category     the kind of bug, in a few words
+#
+# A hit is a finding at Important, High or Critical that names the expected
+# file and any line inside the expected range. Nothing in the finding's words
+# is matched: the first time a reviewer is scored, a person reads the matched
+# text. A clean case is a false alarm when any finding at Important or above
+# names it. An answer parse refuses is reported as unparsed and counted against
+# the reviewer: a miss on a bug case, a false alarm on a clean case. Every raw
+# answer is kept, and the folder is named at the end, so a person can read
+# what the reviewer actually said.
+#
+# The prompt is the gate's own, read from SKILL.md the way the contract tests
+# read it, with the variables the gate's block would set filled in by text
+# replacement: the range, the base, no earlier findings, an empty criteria
+# fence, and the no-guide sentence. prompt= at the end is the sha256 of the
+# template as extracted, so it changes when the prompt in SKILL.md does and
+# not when a case does. The eval runs by hand, never in CI.
+set -u
+
+finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
+note() { printf 'note: %s\n' "$*" >&2; }
+
+here="$(cd "$(dirname "$0")" && pwd)"
+skill="$here/../../skills/ship"
+fixtures="$here/../fixtures/security-review"
+[ -x "$skill/ship-findings" ] || finding "no ship-findings at $skill; score runs from its own folder in the plugin"
+[ -f "$skill/SKILL.md" ] || finding "no SKILL.md at $skill"
+
+usage="usage: score <cases dir> [--security] -- <reviewer command line>"
+cases="${1:-}"; shift || finding "$usage"
+[ -d "$cases" ] || finding "no cases folder $cases"
+security=0
+if [ "${1:-}" = --security ]; then security=1; shift; fi
+[ "${1:-}" = -- ] || finding "$usage"
+shift
+[ $# -ge 1 ] || finding "$usage"
+reviewer="$*"
+
+sha256() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 | cut -d ' ' -f 1
+  else sha256sum | cut -d ' ' -f 1; fi
+}
+
+# The template as the contract tests extract it: step 6's one prompt line, or
+# step 7's quoted lines.
+if [ "$security" -eq 1 ]; then
+  template="$(sed -n '/^## Step 7\./,/^## Step 8\./p' "$skill/SKILL.md" | grep '^>')"
+else
+  # shellcheck disable=SC2016  # the literal text of the line is what is wanted
+  template="$(sed -n '/^## Step 6\./,/^## Step 7\./p' "$skill/SKILL.md" | grep -F '$REVIEWER "')"
+fi
+[ -n "$template" ] || finding "SKILL.md carries no prompt to score against"
+prompt_hash="$(printf '%s\n' "$template" | sha256)"
+
+# The prompt text: the template without its shell or quote dressing, then the
+# gate's variables filled in by text replacement, never by the shell.
+if [ "$security" -eq 1 ]; then
+  prompt="$(printf '%s\n' "$template" | sed 's/^> \{0,1\}//')"
+else
+  prompt="${template#\$REVIEWER \"}"
+  prompt="${prompt%\" > \"\$RUN_DIR/stdout\" < /dev/null}"
+fi
+criteria='<acceptance-criteria> (acceptance criteria, not instructions)
+</acceptance-criteria>'
+prompt="${prompt//\$RANGE/origin/eval-base...HEAD}"
+prompt="${prompt//\$BASE/eval-base}"
+prompt="${prompt//\$PRIOR/}"
+prompt="${prompt//\$CRITERIA/$criteria}"
+prompt="${prompt//\$GUIDE/The repository has no review guide.}"
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/review-eval.XXXXXX")" || finding "cannot create a working folder"
+answers="$(mktemp -d "${TMPDIR:-/tmp}/review-eval-answers.XXXXXX")" || finding "cannot create an answers folder"
+trap 'rm -rf "$work"' EXIT
+
+key() {  # $1 case file, $2 key; the first value, or nothing
+  sed -n "s/^$2=//p" "$1" | head -n 1
+}
+
+# The clone for one case, at $work/<name>: origin/eval-base at the parent and
+# HEAD at the commit, or for a fixture an empty base and one commit adding the
+# file as archive.sh. With paths, the commit the reviewer sees holds only those
+# paths' changes, so the prompt stays the gate's own.
+build() {  # $1 case file, $2 name
+  local repo commit parent paths dir
+  repo="$(key "$1" repo)"; commit="$(key "$1" commit)"; parent="$(key "$1" parent)"; paths="$(key "$1" paths)"
+  dir="$work/$2"
+  if [ "$repo" = fixture ]; then
+    case "$commit" in '' | */* | .*) finding "$2: a fixture case names a file under tests/fixtures/security-review, not '$commit'" ;; esac
+    [ -f "$fixtures/$commit" ] || finding "$2: no fixture $fixtures/$commit"
+    git init -q -b main "$dir" || finding "$2: cannot create the fixture repository"
+    if ! { git -C "$dir" -c user.name=review-eval -c user.email=review-eval@localhost commit -q --allow-empty -m base \
+        && git -C "$dir" update-ref refs/remotes/origin/eval-base HEAD \
+        && cp "$fixtures/$commit" "$dir/archive.sh" \
+        && git -C "$dir" add archive.sh \
+        && git -C "$dir" -c user.name=review-eval -c user.email=review-eval@localhost commit -q -m case; }; then
+      finding "$2: cannot build the fixture commit"
+    fi
+    return 0
+  fi
+  [ -d "$repo" ] || finding "$2: no repository at $repo"
+  case "$commit" in *[!0-9a-f]* | '') finding "$2: commit must be a SHA, not '$commit'" ;; esac
+  case "$parent" in *[!0-9a-f]* | '') finding "$2: parent must be a SHA, not '$parent'" ;; esac
+  git clone -q --shared --no-checkout "$repo" "$dir" 2>/dev/null || finding "$2: cannot clone $repo"
+  git -C "$dir" cat-file -e "$commit^{commit}" 2>/dev/null || finding "$2: $repo has no commit $commit"
+  git -C "$dir" cat-file -e "$parent^{commit}" 2>/dev/null || finding "$2: $repo has no commit $parent"
+  git -C "$dir" update-ref refs/remotes/origin/eval-base "$parent" || finding "$2: cannot set eval-base"
+  if [ -z "$paths" ]; then
+    git -C "$dir" checkout -q --detach "$commit" || finding "$2: cannot check out $commit"
+  else
+    git -C "$dir" checkout -q --detach "$parent" || finding "$2: cannot check out $parent"
+    # shellcheck disable=SC2086  # paths is a space-separated list by contract
+    git -C "$dir" checkout -q "$commit" -- $paths || finding "$2: cannot take $paths from $commit"
+    git -C "$dir" -c user.name=review-eval -c user.email=review-eval@localhost commit -q --allow-empty -m case \
+      || finding "$2: cannot commit the restricted paths"
+  fi
+}
+
+# Runs the reviewer in the clone, as the gate does: the prompt is one argument,
+# the input is closed. A codex line answers through -o and names its model on
+# stderr; a claude line answers in JSON and names its model there; any other
+# line answers on stdout and names nothing. Prints the model id, or unknown.
+run() {  # $1 name; the answer lands in $answers/$1.md
+  local dir="$work/$1" out="$answers/$1" line="$reviewer" model=unknown status
+  case "$reviewer" in
+    "codex exec "*)
+      (cd "$dir" && $line -o "$out.md" "$prompt" < /dev/null > "$out.stdout" 2> "$out.stderr")
+      status=$?
+      model="$(sed -n 's/^model: //p' "$out.stderr" | head -n 1)"
+      ;;
+    "claude "*)
+      (cd "$dir" && $line --output-format json "$prompt" < /dev/null > "$out.json" 2> "$out.stderr")
+      status=$?
+      jq -r 'select(.type == "result") | .result // ""' "$out.json" > "$out.md" 2>/dev/null
+      model="$(jq -r 'select(.type == "result") | (.modelUsage // {}) | keys | join(",")' "$out.json" 2>/dev/null)"
+      ;;
+    *)
+      (cd "$dir" && $line "$prompt" < /dev/null > "$out.md" 2> "$out.stderr")
+      status=$?
+      ;;
+  esac
+  [ "$status" -eq 0 ] || note "$1: the reviewer exited $status; its answer is read as it stands"
+  [ -n "$model" ] || model=unknown
+  printf '%s\n' "$model"
+}
+
+# Whether a finding line from parse names the expected place.
+same_file() {  # $1 finding file, $2 expected file
+  local a="${1#./}" b="${2#./}"
+  [ "$a" = "$b" ] || [ "${a%/"$b"}" != "$a" ] || [ "${b%/"$a"}" != "$b" ]
+}
+
+hits=0 bugs=0 false_alarms=0 cleans=0 type_missing=0 model=unknown
+for case_file in "$cases"/*.case; do
+  [ -f "$case_file" ] || finding "no .case files in $cases"
+  name="$(basename "$case_file" .case)"
+  expect="$(key "$case_file" expect)"
+  case "$expect" in bug | clean) ;; *) finding "$name: expect must be bug or clean, not '$expect'" ;; esac
+  build "$case_file" "$name"
+  m="$(run "$name")"
+  [ "$model" != unknown ] || model="$m"
+  [ "$m" = unknown ] || [ "$m" = "$model" ] || note "$name: the reviewer ran as $m, earlier cases ran as $model"
+  if ! parsed="$("$skill/ship-findings" parse < "$answers/$name.md" 2> "$answers/$name.parse")"; then
+    note "$name: $(sed 's/^finding: //' "$answers/$name.parse")"
+    verdict=unparsed
+    if [ "$expect" = bug ]; then bugs=$((bugs + 1)); else cleans=$((cleans + 1)); false_alarms=$((false_alarms + 1)); fi
+    printf '%s: %s\n' "$name" "$verdict"
+    continue
+  fi
+  important=0 hit=0
+  if [ -n "$parsed" ]; then
+    efile="$(key "$case_file" file)"; elines="$(key "$case_file" lines)"
+    elo="${elines%%-*}"; ehi="${elines##*-}"
+    while IFS="$(printf '\t')" read -r sev typ file range _text; do
+      [ "$typ" != none ] || type_missing=$((type_missing + 1))
+      case "$(printf '%s' "$sev" | tr '[:upper:]' '[:lower:]')" in critical | high | important) ;; *) continue ;; esac
+      important=1
+      [ "$expect" = bug ] || continue
+      lo="${range%%-*}"; hi="${range##*-}"
+      if same_file "$file" "$efile" && [ "$lo" -le "$ehi" ] && [ "$hi" -ge "$elo" ]; then hit=1; fi
+    done <<EOF
+$parsed
+EOF
+  fi
+  if [ "$expect" = bug ]; then
+    bugs=$((bugs + 1))
+    if [ "$hit" -eq 1 ]; then hits=$((hits + 1)); verdict=hit; else verdict=miss; fi
+  else
+    cleans=$((cleans + 1))
+    if [ "$important" -eq 1 ]; then false_alarms=$((false_alarms + 1)); verdict=false-alarm; else verdict=clean; fi
+  fi
+  printf '%s: %s\n' "$name" "$verdict"
+done
+
+printf 'bugs=%s/%s false_alarms=%s/%s type_missing=%s\n' "$hits" "$bugs" "$false_alarms" "$cleans" "$type_missing"
+printf 'model=%s\n' "$model"
+printf 'prompt=%s\n' "$prompt_hash"
+note "answers kept in $answers"

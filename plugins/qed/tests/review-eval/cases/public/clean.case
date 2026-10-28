@@ -1,0 +1,7 @@
+# tests/fixtures/security-review/clean.sh, the safe counterpart, committed as
+# archive.sh on top of an empty base. Any finding at Important or above here
+# is a false alarm. A smoke test of the pipeline, not a measurement.
+repo=fixture
+commit=clean.sh
+expect=clean
+category=none

@@ -779,9 +779,78 @@ prompt_fake() {  # a reviewer that keeps its prompt and answers clean
   six="$(sed -n '/^## Step 6\./,/^## Step 7\./p' "$SHIP_MD" | tr '\n' ' ' | tr -s ' ')"
   [[ "$six" == *'A finding that comes back without one is not a stop'* ]]
   [[ "$six" == *'look through the branch diff for other instances of the same kind of bug'* ]]
-  [[ "$six" == *'fix them in the same pass'* ]]
   [[ "$seven" == *"stating > its severity, one of Critical, High, Medium or Low, on its first line"* ]]
+  [[ "$six" == *'fix them in the same pass'* ]]
   [[ "$six" == *'Three fix passes per gate.'* ]]
   table="$(sed -n '/^## Stop and report/,/^## Red flags/p' "$SHIP_MD" | grep -i 'type:' || true)"
   [ -z "$table" ]
+}
+
+# ---- the rescore rule ------------------------------------------------------------
+# tests/review-eval/scores.md is evidence about one reviewer line under one
+# prompt. A changed flag, model or prompt word makes a row evidence about
+# something else, so every line the gate can run needs a row under each prompt
+# it is used with, carrying the hash score prints for that prompt now.
+
+SCORES="$PLUGIN_DIR/tests/review-eval/scores.md"
+
+prompt_hash() {  # $1 code | security
+  if [ "$1" = security ]; then
+    sed -n '/^## Step 7\./,/^## Step 8\./p' "$SHIP_MD" | grep '^>' | shasum -a 256 | cut -d ' ' -f 1
+  else
+    sed -n '/^## Step 6\./,/^## Step 7\./p' "$SHIP_MD" | grep -F '$REVIEWER "' | shasum -a 256 | cut -d ' ' -f 1
+  fi
+}
+
+# The lines, one per output line as "<prompt>\t<command line>": the Claude
+# code line under the code prompt, every Sol line under both, the Claude
+# security line under the security prompt.
+reviewer_lines() {
+  local env="$SKILL_DIR/ship-env" claude fmt floor tested terra s
+  claude="$(sed -n "s/^claude_reviewer='\(.*\)'$/\1/p" "$env")"
+  [ -n "$claude" ] || { echo "ship-env has no claude_reviewer line"; return 1; }
+  printf 'code\t%s\n' "$claude"
+  fmt="$(sed -n "s/^  printf '\(codex exec -m %s[^']*\)\\\\n' .*/\1/p" "$env" | head -n 1)"
+  [ -n "$fmt" ] || { echo "ship-env has no codex line format"; return 1; }
+  floor="$(sed -n 's/^sol_floor=//p' "$env")"
+  tested="$(sed -n "s/^tested_sols='\(.*\)'$/\1/p" "$env")"
+  terra="$(grep -o 'gpt-[0-9.]*-terra' "$SKILL_DIR/config/security-reviewer" | head -n 1)"
+  { [ -n "$floor" ] && [ -n "$tested" ] && [ -n "$terra" ]; } || { echo "a Sol floor, tested Sols or the Terra fallback is missing"; return 1; }
+  for s in $floor $tested $terra; do
+    printf 'code\t%s\n' "${fmt/\%s/$s}"
+    printf 'security\t%s\n' "${fmt/\%s/$s}"
+  done | sort -u
+  claude="$(sed -n "s/^claude_security_reviewer='\(.*\)'$/\1/p" "$env")"
+  [ -z "$claude" ] || printf 'security\t%s\n' "$claude"
+}
+
+@test "every reviewer line the gate can run has a score row under the current prompt" {
+  [ -f "$SCORES" ] || { echo "no $SCORES"; return 1; }
+  code="$(prompt_hash code)"; security="$(prompt_hash security)"
+  lines_found="$(reviewer_lines)" || { echo "$lines_found"; return 1; }
+  [ "$(printf '%s\n' "$lines_found" | grep -c .)" -ge 5 ]
+  missing=""
+  while IFS="$(printf '\t')" read -r prompt line; do
+    [ -n "$line" ] || continue
+    if [ "$prompt" = code ]; then hash="$code"; else hash="$security"; fi
+    grep -qF "| \`$line\` | " "$SCORES" || { missing="$missing
+$prompt: no row for $line"; continue; }
+    grep -F "| \`$line\` | " "$SCORES" | grep -F "| $prompt | $hash |" | grep -q . \
+      || missing="$missing
+$prompt: no row for $line with the current prompt hash $hash; run tests/review-eval/score and add one"
+  done <<EOF
+$lines_found
+EOF
+  [ -z "$missing" ] || { echo "$missing"; return 1; }
+}
+
+@test "the scores file carries the historical rows outside the rule, and the rescore rule" {
+  grep -qF '| gpt-5.6-sol | security | historical | 2/2, 0 false alarms |' "$SCORES"
+  grep -qF '| gpt-6.1-sol | security | historical | 0/2' "$SCORES"
+  grep -qF '| claude-opus-5-5 | security | historical | 2/2, 0 false alarms |' "$SCORES"
+  grep -qF 'smoke test of the pipeline, not a measurement' "$SCORES"
+  grep -qF '`newest_sol any`' "$SCORES"
+  for k in reviewer security-reviewer; do
+    grep -qF 'tests/review-eval/scores.md' "$SKILL_DIR/config/$k"
+  done
 }

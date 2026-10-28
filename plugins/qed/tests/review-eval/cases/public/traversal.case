@@ -1,0 +1,10 @@
+# Planted defect 2 of tests/fixtures/security-review/vulnerable.sh, which the
+# scorer commits as archive.sh on top of an empty base. A smoke test of the
+# pipeline, not a measurement: the fixture's own comments name the bug.
+repo=fixture
+commit=vulnerable.sh
+expect=bug
+file=archive.sh
+lines=24-24
+must_report=The archive name is joined to the root with no check that the result stays under it, so a name walking up with .. reads a file outside the root.
+category=path traversal

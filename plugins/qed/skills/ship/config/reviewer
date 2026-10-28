@@ -27,4 +27,7 @@
 # If the model named here is refused, fall back to another one and say in the
 # pull request which reviewer actually ran. A review that silently downgraded is
 # worse than one that did not happen.
+#
+# What each reviewer line has found on known bugs, and the rule that a changed
+# line or prompt needs a new score, are in tests/review-eval/scores.md.
 auto
