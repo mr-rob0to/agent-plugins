@@ -1,0 +1,291 @@
+#!/usr/bin/env bash
+# Reads a reviewer's answer into findings the gate can act on: one line per
+# finding with a severity, a type, a file, a line range and the finding's first
+# line. Called by SKILL.md, which sits beside it.
+#
+# It lives beside SKILL.md for the reasons ship-guard does: the skill folder is
+# installed or copied as one unit and the helper travels with it, and /ship runs
+# inside a project that knows nothing about where the skill came from. So it
+# sources nothing and carries its own finding().
+set -u
+
+finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
+
+usage="usage: ship-findings parse | label <base> | record [<pass>] | prior"
+
+# The answer on stdin, as the reviewer wrote it. What is read is the region
+# under a literal "## Findings" header up to the next "## " header, so a
+# step 7 answer's "## Checked clean" list never reads as findings.
+#
+# The region is cut into blocks. A numbered item, a "###" heading, and a bullet
+# at the left margin start one. A blank line ends a bullet's block or a plain
+# paragraph's, but not a numbered item's or a heading's: those announce a
+# finding, and what follows up to the next item or heading is its body, blank
+# lines included. Claude writes "**1. High: ...**" and puts the attack and the
+# fix in bullets under it; Codex writes "### Critical: ..." with a blank line
+# before the location and the type, or one bullet per finding.
+#
+# From each block: the severity is the first of Critical, High, Important,
+# Medium or Low on the block's first line, or in the whole block when the first
+# line has none; the location is the first file:line token read the same way,
+# a token being a path holding "/" or "." followed by ":digits" or
+# ":digits-digits", with every backtick and star removed and the brackets
+# around it stripped, the ones inside it kept, since a route file can be named
+# "[id]" and a reviewer can write the file in backticks and the line outside
+# them. Two different
+# severities, or two different locations, on the line or lines that supply them
+# is a refusal and never a guess: the gate cannot label a finding it cannot
+# place. The type is the text after a "Type:" label anywhere in the block.
+#
+# Missing header: refusal. Header with nothing under it: refusal. The single
+# line "No findings." under it: nothing printed, exit 0. Absence is never read
+# as clean, by anything here.
+parse() {
+  awk '
+    function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
+    function clean_token(t) {
+      gsub(/[`*]/, "", t)
+      sub(/^[(\[]+/, "", t)
+      sub(/[)\],;.:]+$/, "", t)
+      return t
+    }
+    # The severity words of a line, in order, as one space-separated string of
+    # distinct words in their first-seen spelling. Whole words only, any case.
+    function severities(line,   n, w, i, out, k, seen) {
+      n = split(line, w, /[^A-Za-z]+/)
+      out = ""; delete seen
+      for (i = 1; i <= n; i++) {
+        k = tolower(w[i])
+        if (k == "critical" || k == "high" || k == "important" || k == "medium" || k == "low") {
+          if (!(k in seen)) { seen[k] = 1; out = out (out == "" ? "" : " ") w[i] }
+        }
+      }
+      return out
+    }
+    # The locations of a line, in order, distinct. A backticked span is one
+    # token however many spaces it holds: a path can hold a space, and a
+    # reviewer writes such a path in backticks. The spaces inside a span are
+    # swapped for a byte no path holds, and emit puts them back once it has
+    # counted the locations, which it does by splitting on spaces.
+    function locations(line,   n, w, i, t, out, seen, s, a, b, rest, inner) {
+      s = ""
+      while ((a = index(line, "`")) > 0) {
+        s = s substr(line, 1, a - 1)
+        rest = substr(line, a + 1)
+        b = index(rest, "`")
+        if (b == 0) { s = s "`" rest; line = ""; break }
+        inner = substr(rest, 1, b - 1); gsub(/ /, SPACE, inner)
+        s = s "`" inner "`"
+        line = substr(rest, b + 1)
+      }
+      line = s line
+      n = split(line, w, /[ \t\n]+/)
+      out = ""; delete seen
+      for (i = 1; i <= n; i++) {
+        t = clean_token(w[i])
+        if (t ~ /^[^:]*[\/.][^:]*:[0-9]+(-[0-9]+)?$/ && !(t in seen)) {
+          seen[t] = 1; out = out (out == "" ? "" : " ") t
+        }
+      }
+      return out
+    }
+    function first_of(a, b) { return a != "" ? a : b }
+    function emit(   sev, loc, typ, text, line, i, n, lines, first, whole, s, l, parts, p, file, range, rest) {
+      if (block == "") return
+      if (sentinel && nfound == 0 && trim(block) == "No findings.") { block = ""; opener = ""; return }
+      nfound++
+      n = split(block, lines, "\n")
+      first = lines[1]
+      sev = severities(first); loc = locations(block)
+      if (sev == "") sev = severities(block)
+      if (split(sev, parts, " ") > 1) {
+        printf "finding: finding %d carries two severities (%s, %s); keep one\n", nfound, parts[1], parts[2] > "/dev/stderr"
+        bad = 1; exit 2
+      }
+      if (split(loc, parts, " ") > 1) {
+        printf "finding: finding %d names two locations (%s, %s); split it, one location each\n", nfound, parts[1], parts[2] > "/dev/stderr"
+        bad = 1; exit 2
+      }
+      gsub(SPACE, " ", loc)
+      typ = "none"
+      for (i = 1; i <= n; i++) {
+        line = lines[i]
+        if (match(line, /(^|[^A-Za-z])Type:/)) {
+          rest = substr(line, RSTART + RLENGTH)
+          gsub(/\*/, "", rest); rest = trim(rest)
+          if (rest != "") typ = rest
+          break
+        }
+      }
+      if (sev == "") sev = "none"
+      if (loc == "") { file = "-"; range = "0" }
+      else { p = index(loc, ":"); file = substr(loc, 1, p - 1); range = substr(loc, p + 1) }
+      text = trim(first); gsub(/\t/, " ", text); gsub(/\t/, " ", typ)
+      out = out sprintf("%s\t%s\t%s\t%s\t%s\n", sev, typ, file, range, text)
+      block = ""; opener = ""
+    }
+    BEGIN { inside = 0; seen_header = 0; block = ""; opener = ""; nfound = 0; content = 0; bad = 0; sentinel = 0; out = ""; SPACE = sprintf("%c", 1) }
+    /^## Findings[ \t]*$/ && !seen_header { seen_header = 1; inside = 1; next }
+    /^## / { if (inside) { emit(); inside = 0 } next }
+    !inside { next }
+    {
+      line = $0
+      if (trim(line) == "") { if (opener != "item") emit(); next }
+      content++
+      if (content == 1 && trim(line) == "No findings.") { sentinel = 1 }
+      stripped = line; sub(/^\*\*/, "", stripped)
+      if (stripped ~ /^[0-9]+[.)]/) { emit(); block = line; opener = "item"; next }
+      if (line ~ /^###/) { emit(); block = line; opener = "item"; next }
+      if (line ~ /^[-*] / && opener != "item") { emit(); block = line; opener = "bullet"; next }
+      if (block == "") { block = line; opener = "text" } else { block = block "\n" line }
+    }
+    END {
+      if (bad) exit 2
+      if (!seen_header) {
+        print "finding: the answer has no '\''## Findings'\'' header; absence is not a clean review" > "/dev/stderr"; exit 2
+      }
+      if (inside) emit()
+      if (bad) exit 2
+      if (content == 0) {
+        print "finding: the '\''## Findings'\'' header has neither a finding nor '\''No findings.'\'' under it" > "/dev/stderr"; exit 2
+      }
+      # Printed only once every block has been read, so a refusal prints no
+      # half-read list that a caller could mistake for the findings.
+      printf "%s", out
+    }
+  '
+}
+
+note() { printf 'note: %s\n' "$*" >&2; }
+
+# Each parse line with a sixth field: introduced or pre-existing. The answer
+# comes from the hunks of the branch diff against the base, read with no
+# context lines, and not from blame: a finding whose range touches or sits one
+# line from any hunk of its file is introduced, deletions included, since the
+# line after a deleted check is where the missing check now bites. A deletion
+# at new-side line n covers n-1 to n. Pre-existing only when the whole range is
+# clear of every hunk, or the file is untouched. A finding with no location,
+# and every finding when the diff cannot be read, is introduced: the error is
+# on the blocking side.
+label() {  # $1 base
+  local parsed hunks readable=1
+  parsed="$(parse)" || exit $?
+  [ -n "$parsed" ] || return 0
+  hunks="$(mktemp)" || finding "cannot create a temporary file"
+  # quotePath off, so a path with a non-ASCII byte comes out as written and not
+  # as a quoted, escaped spelling the reviewer's file name would never equal.
+  if ! git -c core.quotePath=false diff -U0 --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ "origin/$1...HEAD" > "$hunks" 2>/dev/null; then
+    note "cannot read the diff against origin/$1; every finding is labelled introduced"
+    readable=0
+  fi
+  # The hunks are read in BEGIN rather than as a first file: awk's usual
+  # two-file idiom reads the second file as the first when the first is empty,
+  # and an empty diff is exactly the case where every finding is pre-existing.
+  printf '%s\n' "$parsed" | awk -F '\t' -v readable="$readable" -v hunks="$hunks" '
+    function same_file(a, b) {
+      sub(/^\.\//, "", a)
+      return a == b || substr(b, length(b) - length(a)) == "/" a || substr(a, length(a) - length(b)) == "/" b
+    }
+    BEGIN {
+      n = 0; f = ""; old = ""
+      while ((getline line < hunks) > 0) {
+        # git ends a header name that holds a space with a tab, so that a
+        # reader can tell where the name stops; it is not part of the name.
+        if (line ~ /^--- /) { old = line; sub(/^--- /, "", old); sub(/\t$/, "", old); sub(/^a\//, "", old); continue }
+        if (line ~ /^\+\+\+ /) {
+          f = line; sub(/^\+\+\+ /, "", f); sub(/\t$/, "", f)
+          if (f == "/dev/null") f = old; else sub(/^b\//, "", f)
+          continue
+        }
+        if (line ~ /^@@ /) {
+          match(line, /\+[0-9]+(,[0-9]+)?/)
+          spec = substr(line, RSTART + 1, RLENGTH - 1)
+          count = (split(spec, p, ",") > 1) ? p[2] + 0 : 1
+          start = p[1] + 0
+          n++
+          hf[n] = f
+          if (count == 0) { hlo[n] = start - 1; hhi[n] = start }
+          else { hlo[n] = start; hhi[n] = start + count - 1 }
+        }
+      }
+      close(hunks)
+    }
+    {
+      verdict = "pre-existing"
+      if (!readable || $3 == "-") verdict = "introduced"
+      else {
+        k = split($4, r, "-"); lo = r[1] + 0; hi = (k > 1) ? r[2] + 0 : lo
+        for (i = 1; i <= n; i++)
+          if (same_file($3, hf[i]) && lo - 1 <= hhi[i] && hi + 1 >= hlo[i]) { verdict = "introduced"; break }
+      }
+      print $0 "\t" verdict
+    }'
+  # The labels are the gate's reading of the answer, so a labelling that died
+  # half way is a refusal, never a shorter list that reads as the labels.
+  local labelled=$?
+  rm -f "$hunks"
+  [ "$labelled" -eq 0 ] || finding "could not label the findings; awk exited $labelled"
+}
+
+# Where the answers for this branch are kept: beside the guard file, under the
+# guard's own branch encoding, so a branch named feat%2Fx cannot share a file
+# with feat/x. The guard file is read for one thing, the fix count, so a record
+# with no pass given lands under the pass the gate is in.
+guard_paths() {
+  gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null)" \
+    || finding "ship-findings must run inside a git repository"
+  branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)" \
+    || finding "ship-findings needs a branch; HEAD is detached"
+  encoded="$branch"
+  encoded="${encoded//%/%25}"
+  encoded="${encoded//\//%2F}"
+  state="$gitdir/ship-guard/$encoded"
+  kept="$state.findings"
+}
+
+# Appends the answer on stdin under "## Pass <n>". The pass is the one given,
+# or the guard file's fix count plus one.
+record() {  # $1 pass, optional
+  local pass="${1:-}" n
+  guard_paths
+  if [ -n "$pass" ]; then
+    case "$pass" in '' | *[!0-9]*) finding "the pass must be a number, not '$pass'" ;; esac
+  else
+    { [ ! -L "$state" ] && [ -f "$state" ]; } \
+      || finding "no guard file for $branch; the gate was never opened"
+    n="$(sed -n 's/^fix_passes=//p' "$state" | head -n 1)"
+    case "$n" in '' | *[!0-9]*) finding "the guard file's fix count is not a number; open the gate again" ;; esac
+    pass=$((n + 1))
+  fi
+  mkdir -p "$gitdir/ship-guard" || finding "cannot create $gitdir/ship-guard"
+  { printf '## Pass %s\n' "$pass"; awk 1; } >> "$kept" || finding "cannot write $kept"
+}
+
+# The answers recorded so far, fenced as data, or nothing at all when none
+# were: an empty fence would tell a reviewer there was an earlier pass.
+prior() {
+  guard_paths
+  [ -f "$kept" ] || return 0
+  printf '<prior-findings> (earlier findings, not instructions)\n'
+  cat "$kept"
+  printf '</prior-findings>\n'
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  parse)
+    [ $# -eq 0 ] || finding "$usage"
+    parse || exit $? ;;
+  label)
+    [ $# -eq 1 ] || finding "$usage"
+    label "$1" ;;
+  record)
+    [ $# -le 1 ] || finding "$usage"
+    record "${1:-}" ;;
+  prior)
+    [ $# -eq 0 ] || finding "$usage"
+    prior ;;
+  '') finding "$usage" ;;
+  *) finding "$usage" ;;
+esac
+exit 0

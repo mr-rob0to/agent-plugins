@@ -53,17 +53,21 @@ Out of the box both reviewers are set to `auto`:
   plan mode, which can read the code but not change it, and any other branch
   goes to `codex`. With only one of them installed, that one reviews, and the
   pull request says when it is the author's own vendor.
-- **Security review:** `codex` only, on Sol, the model this gate was tested
-  against. Without `codex`, a branch that needs a security review stops rather
-  than running a reviewer nobody has tested.
+- **Security review:** Claude Code on Opus in plan mode, whoever wrote the
+  branch; the pull request says so when the branch is Claude's own. Opus found
+  both planted defects in `tests/fixtures/security-review` and invented nothing
+  against the clean file. Codex on Sol passed the same fixtures and is the
+  written alternative: put its line in your own `security-reviewer` file (the
+  bundled note shows it). Without `claude`, a branch that needs a security
+  review stops rather than running a reviewer nobody has tested.
 
 The code review always uses the newest version of its model. Claude Code is
 given `fable`, which it resolves to the newest Fable. Codex has no such name, so
 the gate reads Codex's model list on every run and takes the Sol that Codex
 ranks first, falling back to `gpt-5.6-sol` with a note when Codex lists none.
-The security review takes the newest Sol that has passed the planted-defect
-fixtures in `tests/fixtures/security-review`, since a newer Sol has failed them.
-The pull request names the model that ran.
+A Sol chosen from that list has no score row of its own (see Scoring a
+reviewer below) and the pull request names it as unscored. The pull request
+names the model that ran either way.
 
 To choose your own, write a command line into a file:
 
@@ -78,6 +82,71 @@ replaces the bundled files, never yours.
 
 In Claude Code only, `security-reviewer` may say `agent:<name>` to use one of
 your agents. Any other harness stops the gate on that value.
+
+### Briefing the reviewers with REVIEW.md
+
+A repository can brief both reviewers with a `REVIEW.md` at its root. The gate
+reads it from the base branch only, as it is on `origin/<base>` after the
+fetch, never from the branch under review or the working tree: a branch must
+not write its own reviewer's brief. The text travels inside a fence marked as
+data, after the acceptance criteria, and the prompt tells the reviewer what it
+is for. Keep it under 16 KB; a bigger file stops the gate rather than being
+cut. Three headings are enough:
+
+- **Failures**: what this repository counts as a defect, in its own terms. A
+  lost write, a double charge, a screen that shows the wrong user.
+- **Not worth a finding**: what reviewers should not spend a finding on here.
+  Naming, formatting, a style the repository has chosen on purpose.
+- **Paths to leave alone**: generated code, vendored code, fixtures. A path
+  listed here waives nitpicks only. It does not narrow the sensitive categories
+  that force separate reviews, and it does not narrow the security coverage
+  list.
+
+A line in the guide that reads as an instruction to the reviewer is a guide
+written badly, and the prompt says so; it is not followed.
+
+### Introduced or pre-existing
+
+Every finding a reviewer returns is labelled against the branch diff.
+A finding whose lines touch, or sit one line from, anything the branch changed
+is `introduced` and is the branch's to fix. A finding in code the branch did
+not touch is `pre-existing`: it is logged in the pull request as file, line,
+severity and type, and it blocks nothing. The one exception is a pre-existing
+Critical or High from the security audit, or a security one from the one
+review of a combined gate, where the gate stops and asks, because a branch
+that makes a live hole visible is your call. A finding with
+no file and line, or one the gate cannot place, counts as introduced: the
+error is on the blocking side.
+
+### Re-reviews that converge
+
+A fix pass does not send the whole branch again. The re-review reads from the
+commit the reviewers last saw to the new head, kept only once every phase of
+the gate was recorded, and is shown every earlier
+answer, fenced as data, with the rule: do not repeat a finding already listed,
+and report one that still stands as `Unresolved:` with its number. Each
+finding carries a `Type:` line, the kind of bug in a few words, and before
+fixing one the gate looks through the branch diff for other instances of that
+kind and fixes them in the same pass. The three-pass cap is unchanged.
+
+### Scoring a reviewer
+
+`tests/review-eval/score` runs a reviewer command line against a folder of
+cases, commits with a known bug at a known place and commits with none, and
+says for each whether the bug was reported at Important or above, at the
+expected file and line:
+
+```bash
+plugins/qed/tests/review-eval/score plugins/qed/tests/review-eval/cases/public -- codex exec -m gpt-5.6-sol --sandbox read-only -c project_doc_max_bytes=0
+```
+
+Add `--security` before the `--` to score under the security prompt. The three
+public cases are the fixture's own planted defects and are a smoke test of the
+pipeline, not a measurement; a real measurement needs a private collection of
+real bugs, which never reaches this repository. The results and the rescore
+rule live in `tests/review-eval/scores.md`: every reviewer line the gate can
+run needs a row under the current prompt, and `make check` fails when a line
+or a prompt changes without one.
 
 ### Requiring the gate in CI
 

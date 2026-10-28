@@ -4,28 +4,39 @@
 # agent:<name> dispatches that agent on this host, and anything else is a
 # command line the audit prompt is appended to.
 #
-# `auto` means Codex on the newest Sol that has passed the security fixtures,
-# read-only, in a fresh session, told not to read the reviewed repository's own
-# instructions. The gate reads codex's model catalog on every run and takes the
-# Sol codex ranks first among those that have passed. When codex lists none of
-# them, the gate uses gpt-5.6-sol and says so.
+# `auto` means Claude Code on Opus in plan mode, which reads the tree and the
+# diff and can change neither, in a fresh session that does not load the
+# reviewed repository's own instructions, with the two direct ways out to the
+# network turned off. The line it runs is claude_security_reviewer in ship-env.
+# A host without claude stops the gate and names this file's copy in your own
+# config, rather than running an unqualified reviewer and calling the result a
+# security pass.
 #
-# Sol is the one reviewer that has been put to the test: run against the
-# fixtures in this plugin's tests/fixtures/security-review, it found both
-# planted Critical defects with the attacker, the input and the gain, and
-# invented nothing against the clean counterpart. Versions that have passed:
-# gpt-5.6-sol. A newer Sol is not taken until it passes too: gpt-6.1-sol saw
+# What qualified Opus: on 2026-10-26 that line, run against the fixtures in
+# this plugin's tests/fixtures/security-review, found both planted Critical
+# defects with the attacker, the input and the gain, and raised one Low against
+# the clean counterpart, which is not a false alarm under the rule in
+# expected.md. The alias opus is resolved by Claude Code to the newest Opus, so
+# a new Opus under that name is not caught by anything here: when one ships,
+# the line is rescored by hand, the same risk the code review's fable line
+# carries. What each reviewer line has found on known bugs, and the rule that a
+# changed line or prompt needs a new score, are in tests/review-eval/scores.md.
+#
+# Codex Sol is the written alternative. It passed the same fixtures.
+# Versions that have passed, which is the list tested_sols in ship-env:
+# gpt-5.6-sol. A newer Sol does not count until it passes too: gpt-6.1-sol saw
 # both planted defects and answered "No findings" because a comment in the
 # file said the script never runs. A version that passes is added here and to
-# tested_sols in ship-env, together. Nothing other than Sol has been
-# qualified, so nothing else is chosen for you. A host without codex stops the
-# gate and names your file, rather than running an unqualified reviewer and
-# calling the result a security pass.
+# tested_sols in ship-env, together. To run Sol, write this line into your own
+# copy of this file:
 #
-# If the Sol the gate chose is refused with an HTTP 400, /ship retries once with
+#   codex exec -m gpt-5.6-sol --sandbox read-only -c project_doc_max_bytes=0
+#
+# If a codex line's model is refused with an HTTP 400, /ship retries once with
 # gpt-5.6-sol, or with gpt-5.6-terra when gpt-5.6-sol was the one refused, and
-# says in the pull request which reviewer actually ran. A review that silently
-# downgraded is worse than one that did not happen.
+# says in the pull request which reviewer actually ran. That retry is for a
+# codex line only; a claude line that fails stops the step. A review that
+# silently downgraded is worse than one that did not happen.
 #
 # No agent is chosen automatically. An agent is dispatched by bare name into the
 # repository being reviewed, which can hold a definition of that name, and the
