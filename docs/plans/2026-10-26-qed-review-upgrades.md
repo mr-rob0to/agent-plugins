@@ -1,6 +1,6 @@
 # qed ship gate: review upgrades plan
 
-**Where this stands:** approved 2026-10-27; Tasks 1 to 4 done on branch feat/qed-review-upgrades / next: Task 5, the scorer and the public cases / blocked on: nothing
+**Where this stands:** approved 2026-10-27; Tasks 1 to 5, 7 and 8 done on branch feat/qed-review-upgrades, through the ship gate / next: Task 6, the operator's collection, in its own session / blocked on: nothing
 
 **Goal:** make the gate's reviewers measurable against real bugs, let a repository brief its reviewers from the base branch, stop pre-existing defects from blocking a branch, and make fix-pass re-reviews converge instead of repeating themselves.
 
@@ -81,11 +81,11 @@
 ## Task 5: the scorer and the public cases
 **Files:** create `tests/review-eval/score`, `tests/review-eval/cases/public/injection.case`, `traversal.case`, `clean.case`, `tests/review-eval/scores.md`; create `tests/review-eval.bats`; modify `config/reviewer`, `config/security-reviewer`, `tests/contract.bats`
 **Interfaces:** a `.case` file is `key=value` lines: `repo` (a path, or `fixture`), `commit` (SHA, or the fixture file name), `parent` (SHA; omitted for a fixture), `paths` (optional, space-separated, restricts the diff the reviewer is pointed at), `expect` (`bug` or `clean`), `file`, `lines` (`a-b`), `must_report` (one sentence), `category`. `score <cases dir> [--security] -- <reviewer command line>` runs each case in a throwaway clone (`git clone --shared` into `mktemp -d`, removed by a trap) where it creates `refs/remotes/origin/eval-base` at `parent` and checks out `commit` (for a fixture: an empty base and one commit adding the file as `archive.sh`), builds the prompt as the gate does with an empty criteria fence and the no-guide sentence, runs the reviewer with `eval-base` as the base, parses with `ship-findings parse`, and prints one line per case: `hit`, `miss`, `false-alarm` or `clean`, then `bugs=<hits>/<n> false_alarms=<m>/<k> type_missing=<t>`, then `model=<id the reviewer printed, or unknown>` and `prompt=<sha256 of the prompt text>`. Prompt text is taken from `SKILL.md` by the same sed the contract tests use, so the hash changes when the prompt does.
-- [ ] Bats tests with a fake reviewer printing canned answers: hit, miss, false alarm, type missing, the clone is gone afterwards, and the prompt hash equals `sha256` of the extracted text.
-- [ ] The three public cases encode `expected.md`: injection at `archive.sh:17`, traversal at `archive.sh:24`, clean with `expect=clean`. `scores.md` says these are a smoke test, not a measurement.
-- [ ] `scores.md`: columns date, reviewer command line verbatim, model id printed, prompt hash, public score, operator's collection score, run by. Historical rows, marked outside the rule and with no hash: gpt-5.6-sol (public 2/2, 0 false alarms), gpt-6.1-sol (0/2), Opus 5.5 line (public 2/2, 0 false alarms, 2026-10-26).
-- [ ] Rescore rule, mechanical: a contract test extracts from `ship-env` the Claude line, `sol_floor`, every `tested_sols` entry and the Terra fallback, hashes the step 6 and step 7 prompt text, and requires a non-historical `scores.md` row for each line with that hash. Changing a flag, a model or the prompt without a new row fails `make check`. README says a catalog-chosen Sol (`newest_sol any`) is unscored and the PR body names it.
-- [ ] Both config notes gain a sentence: scores and the rescore rule are in `tests/review-eval/scores.md`.
+- [x] Bats tests with a fake reviewer printing canned answers: hit, miss, false alarm, type missing, the clone is gone afterwards, and the prompt hash equals `sha256` of the extracted text.
+- [x] The three public cases encode `expected.md`: injection at `archive.sh:17`, traversal at `archive.sh:24`, clean with `expect=clean`. `scores.md` says these are a smoke test, not a measurement.
+- [x] `scores.md`: columns date, reviewer command line verbatim, model id printed, prompt hash, public score, operator's collection score, run by. Historical rows, marked outside the rule and with no hash: gpt-5.6-sol (public 2/2, 0 false alarms), gpt-6.1-sol (0/2), Opus 5.5 line (public 2/2, 0 false alarms, 2026-10-26).
+- [x] Rescore rule, mechanical: a contract test extracts from `ship-env` the Claude line, `sol_floor`, every `tested_sols` entry and the Terra fallback, hashes the step 6 and step 7 prompt text, and requires a non-historical `scores.md` row for each line with that hash. Changing a flag, a model or the prompt without a new row fails `make check`. README says a catalog-chosen Sol (`newest_sol any`) is unscored and the PR body names it.
+- [x] Both config notes gain a sentence: scores and the rescore rule are in `tests/review-eval/scores.md`.
 **Done when:** `bats tests/review-eval.bats tests/contract.bats` all `ok`; editing one character of the step 6 prompt makes the rescore contract test `not ok` until a row with the new hash is added.
 
 ## Task 6: the operator's collection, and the first scoring
@@ -99,17 +99,17 @@
 ## Task 8: Claude Opus as the default security reviewer
 **Files:** modify `skills/ship/ship-env` (`probe security-reviewer`, a new `claude_security_reviewer` line), `config/security-reviewer`, `SKILL.md` step 7 fallback prose, `README.md`; modify `tests/ship-env.bats`, `tests/contract.bats`, `tests/review-eval/scores.md`
 **Interfaces:** `ship-env security-reviewer` with `auto` prints `claude -p --safe-mode --disallowedTools WebFetch,WebSearch --model opus --effort high --permission-mode plan` when `claude` is on PATH; otherwise `finding:` naming the operator's file, exactly as the missing-codex case does today. Codex Sol is no longer chosen automatically; an operator who wants it writes the codex line into `~/.config/ship/security-reviewer`. `tested_sols`, `newest_sol tested` and the Terra fallback stay in `ship-env` for that written line, and step 7's HTTP 400 fallback applies only when the reviewer line is a `codex exec` one. The author does not move this choice: a branch Claude wrote is audited by Claude, and `ship-env` prints the same-vendor `note:` so the pull request says so.
-- [ ] Tests first in `tests/ship-env.bats`: `auto` with `claude` on PATH prints the Opus line; without `claude` stops naming the file; the same-vendor note for a Claude author; a written codex line is still returned untouched; `agent:` handling unchanged.
-- [ ] `config/security-reviewer` note: what qualified Opus (the fixture result of 2026-10-26, both Criticals, one Low on clean), where the scores live, and that the alias `opus` is resolved by Claude Code to the newest Opus, so a new Opus is rescored by hand (same risk as the `fable` line).
-- [ ] `SKILL.md` step 7: the fallback paragraph says the HTTP 400 retry is for a codex line only; a Claude line that fails stops the step. The contract test that reads the fallback model from the note is updated to the new wording.
-- [ ] `scores.md`: the Opus security line becomes a non-historical row once Task 6 has scored it; the rescore rule in Task 5 covers it.
-- [ ] README: the security reviewer paragraph names Claude Opus in plan mode as the default and codex Sol as the written alternative.
+- [x] Tests first in `tests/ship-env.bats`: `auto` with `claude` on PATH prints the Opus line; without `claude` stops naming the file; the same-vendor note for a Claude author; a written codex line is still returned untouched; `agent:` handling unchanged.
+- [x] `config/security-reviewer` note: what qualified Opus (the fixture result of 2026-10-26, both Criticals, one Low on clean), where the scores live, and that the alias `opus` is resolved by Claude Code to the newest Opus, so a new Opus is rescored by hand (same risk as the `fable` line).
+- [x] `SKILL.md` step 7: the fallback paragraph says the HTTP 400 retry is for a codex line only; a Claude line that fails stops the step. The contract test that reads the fallback model from the note is updated to the new wording.
+- [x] `scores.md`: the Opus security line becomes a non-historical row once Task 6 has scored it; the rescore rule in Task 5 covers it.
+- [x] README: the security reviewer paragraph names Claude Opus in plan mode as the default and codex Sol as the written alternative.
 **Done when:** `bats tests/ship-env.bats tests/contract.bats` all `ok`; removing the `have claude` branch makes the `auto` test `not ok`; `make check PLUGIN=qed` green.
 
 ## Task 7: docs and version
 **Files:** modify `README.md`, `.claude-plugin/plugin.json`
-- [ ] README: review guide section (Task 3), pre-existing label, converging re-reviews, how to score a reviewer, the rescore rule, unscored catalog Sol.
-- [ ] `version` 0.4.0.
+- [x] README: review guide section (Task 3), pre-existing label, converging re-reviews, how to score a reviewer, the rescore rule, unscored catalog Sol.
+- [x] `version` 0.4.0.
 **Done when:** `make check PLUGIN=qed` prints no `finding:` and bats reports 0 failures.
 
 ## Acceptance criteria
