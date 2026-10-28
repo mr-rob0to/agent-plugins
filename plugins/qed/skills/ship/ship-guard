@@ -11,7 +11,7 @@ set -u
 finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 die()     { printf 'ship-guard: %s\n' "$*" >&2; exit 1; }
 
-usage="usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | last-review | attest | push-ok"
+usage="usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | last-review [security] | attest | push-ok"
 
 gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null)" \
   || finding "/ship guard must run inside a git repository"
@@ -240,6 +240,12 @@ case "$cmd" in
     # range that starts earlier covers more, which is the safe direction.
     last="$(kv review)"
     [ -z "$last" ] || put last_review "$last"
+    # The audit has its own, because the two need not have seen the same
+    # commit: a code review that finds something is fixed before the first
+    # audit runs, and an audit that then started at the code review's commit
+    # would never read the branch itself.
+    last="$(kv security)"
+    [ -z "$last" ] || put last_security "$last"
     # Every phase, including a fix that only answers the security audit: the fix
     # is code, so the commit going out is code no reviewer has read yet. Keeping
     # the code review across a security fix left that round unable to push at
@@ -253,13 +259,17 @@ case "$cmd" in
     printf 'fix pass %s of 3\n' "$n"
     ;;
 
-  # The commit the last fix pass kept, or nothing. Printed as stored: the
-  # caller checks its shape, because this file is untracked and anything
-  # running as this account can write it.
+  # The commit the last fix pass kept for the code review, or with the word
+  # security for the audit, or nothing. Printed as stored: the caller checks
+  # its shape, because this file is untracked and anything running as this
+  # account can write it.
   last-review)
-    [ $# -eq 0 ] || finding "$usage"
     require_file
-    kv last_review
+    case "$#:${1:-}" in
+      0:)         kv last_review ;;
+      1:security) kv last_security ;;
+      *)          finding "$usage" ;;
+    esac
     ;;
 
   # The attestation is built here because this file's format has one owner.

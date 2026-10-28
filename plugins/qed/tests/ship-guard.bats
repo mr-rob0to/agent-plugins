@@ -234,7 +234,41 @@ full_gate() {
   guard open
   run guard fix-pass security
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | last-review | attest | push-ok"* ]]
+  [[ "$output" == "finding: usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | last-review [security] | attest | push-ok"* ]]
+}
+
+@test "a fix pass keeps the commit each reviewer saw, and last-review prints either" {
+  cd "$(new_repo main)"
+  full_gate
+  sha="$(git rev-parse HEAD)"
+  guard fix-pass
+  run guard last-review
+  [ "$status" -eq 0 ]
+  [ "$output" = "$sha" ]
+  run guard last-review security
+  [ "$status" -eq 0 ]
+  [ "$output" = "$sha" ]
+}
+
+@test "a fix pass before the first audit keeps a commit for the code review only" {
+  cd "$(new_repo main)"
+  guard open
+  guard record checks
+  guard record review
+  guard fix-pass
+  run guard last-review
+  [ "$output" = "$(git rev-parse HEAD)" ]
+  run guard last-review security
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "last-review takes nothing or the word security" {
+  cd "$(new_repo main)"
+  guard open
+  run guard last-review checks
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | last-review [security] | attest | push-ok"* ]]
 }
 
 @test "the fourth fix pass is refused" {
@@ -296,7 +330,7 @@ full_gate() {
   cd "$(new_repo main)"
   run guard verify
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | last-review | attest | push-ok"* ]]
+  [[ "$output" == "finding: usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | last-review [security] | attest | push-ok"* ]]
 }
 
 @test "push-ok refuses a guard file counting more fix passes than the gate allows" {

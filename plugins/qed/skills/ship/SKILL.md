@@ -303,11 +303,18 @@ else
   echo "usage: input=unknown output=unknown cache_read=unknown cache_write=unknown"
 fi
 [ "$STATUS" -eq 0 ] || { rm -rf "$RUN_DIR"; echo "finding: the reviewer exited $STATUS" >&2; exit 2; }
-"$SHIP_DIR/ship-findings" record < "$ANSWER" || { rm -rf "$RUN_DIR"; exit 2; }
 "$SHIP_DIR/ship-findings" label "$BASE" < "$ANSWER"
 LABELLED=$?
+[ "$LABELLED" -ne 0 ] || "$SHIP_DIR/ship-findings" record < "$ANSWER" || LABELLED=2
 rm -rf "$RUN_DIR"
 [ "$LABELLED" -eq 0 ] || exit 2
+# Step 7 reads $RANGE too, from the commit the audit last saw, which need
+# not be the one the code review saw.
+RANGE="origin/$BASE...HEAD"
+LAST="$("$SHIP_GUARD" last-review security)" || exit 2
+if [ "${#LAST}" -eq 40 ]; then
+  case "$LAST" in *[!0-9a-f]*) ;; *) RANGE="$LAST...HEAD" ;; esac
+fi
 ```
 
 `$REVIEWER` is deliberately unquoted: the value is a command line and its words
@@ -374,8 +381,10 @@ guide over 16 KB, or a base that was never fetched, stops the block.
 neither a finding nor the sentinel under it. Never treat absence as clean: a
 reviewer that crashed, timed out, or answered something else looks exactly like
 a reviewer that found nothing, and the second reading is the one that ships bugs.
-The block's last call, `"$SHIP_DIR/ship-findings" label`, makes the same
-reading mechanically: it refuses an answer with no header or nothing under it.
+The block's `"$SHIP_DIR/ship-findings" label` call makes the same reading
+mechanically: it refuses an answer with no header or nothing under it. An
+answer it refuses is not recorded, so a run after that stop does not carry it
+as a prior finding.
 
 **Label each finding introduced or pre-existing.** The `label` call prints every
 finding again with a last field, `introduced` or `pre-existing`, decided from
@@ -401,9 +410,12 @@ can be shown what was already found.
 prompt names: the whole branch against the base on a first pass, and from the
 commit the last reviewer read to `HEAD` once a fix pass has run. The guard
 keeps that commit as `last_review` when `fix-pass` drops the review phase,
-and the block trusts it only when it is 40 hex characters, because the guard
-file is untracked and anything running as this account can write it; anything
-else leaves the range at the whole branch, which covers more. The prompt also
+and the commit the audit saw as `last_security`, because the two differ: a
+code review that finds something is fixed before the first audit runs. The
+block trusts a kept commit only when it is 40 hex characters, because the
+guard file is untracked and anything running as this account can write it;
+anything else leaves the range at the whole branch, which covers more. At its
+end the block sets `RANGE` again from `last_security`, for step 7. The prompt also
 carries every earlier answer, fenced as `prior-findings`, and asks the reviewer
 not to repeat one and to report a finding that still stands as `Unresolved:`
 with its number. That is how three passes converge instead of saying the same
@@ -565,10 +577,13 @@ have to guess:
 > narrows neither the sensitive categories nor the coverage list below; a path
 > it excludes waives nitpicks only.
 
-`$RANGE`, `$PRIOR`, `$CRITERIA` and `$GUIDE` are the values step 6's block
-set, so this prompt reads the same range, carries the earlier answers the same
-way, and sends the same criteria and the same guide, fenced the same way. The
-block's `record` call keeps this answer too, so a re-audit sees it.
+`$PRIOR`, `$CRITERIA` and `$GUIDE` are the values step 6's block set, so
+this prompt carries the earlier answers the same way and sends the same
+criteria and the same guide, fenced the same way. `$RANGE` is the value the
+block set last, at its end: the whole branch, or from the commit this audit
+last saw to `HEAD`, which is not where the code review read from. A fix pass
+before the first audit leaves the audit the whole branch. The block's
+`record` call keeps this answer too, so a re-audit sees it.
 
 **Read this answer fail-closed too.** Both headers must be there. A missing
 header, or a header with neither a finding nor the sentinel under it, is a stop.
