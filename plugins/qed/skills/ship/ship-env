@@ -306,7 +306,7 @@ review_guide() {  # $1 base
   local entry mode type sha size
   git rev-parse --verify --quiet "refs/remotes/origin/$1^{commit}" >/dev/null 2>&1 \
     || finding "no origin/$1; fetch the base branch before reading its review guide"
-  entry="$(git ls-tree "refs/remotes/origin/$1" -- REVIEW.md 2>/dev/null)" || entry=""
+  entry="$(git ls-tree --full-tree "refs/remotes/origin/$1" -- REVIEW.md 2>/dev/null)" || entry=""
   mode="${entry%% *}"; entry="${entry#* }"; type="${entry%% *}"; entry="${entry#* }"; sha="${entry%%	*}"
   case "$mode:$type" in
     100644:blob | 100755:blob) ;;

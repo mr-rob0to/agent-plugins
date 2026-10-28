@@ -990,6 +990,22 @@ guide_repo() {  # a repository with origin/main; prints nothing, leaves cwd insi
   [ "${lines[${#lines[@]}-1]}" = "</review-guide>" ]
 }
 
+@test "review-guide reads the root REVIEW.md from inside a subdirectory" {
+  c="$(skill_copy)"
+  guide_repo
+  mkdir -p sub
+  printf '## Failures\nA lost write.\n' > REVIEW.md
+  printf 'not the guide\n' > sub/REVIEW.md
+  git add -A && git commit -q -m guides
+  git update-ref refs/remotes/origin/main HEAD
+  cd sub
+  run --separate-stderr env_at "$c" review-guide main
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
+  [ "${lines[1]}" = "## Failures" ]
+  [ "${lines[2]}" = "A lost write." ]
+}
+
 @test "review-guide says so when the base has no REVIEW.md" {
   c="$(skill_copy)"
   guide_repo

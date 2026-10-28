@@ -77,9 +77,8 @@ parse() {
       nfound++
       n = split(block, lines, "\n")
       first = lines[1]
-      sev = severities(first); loc = locations(first)
+      sev = severities(first); loc = locations(block)
       if (sev == "") sev = severities(block)
-      if (loc == "") loc = locations(block)
       if (split(sev, parts, " ") > 1) {
         printf "finding: finding %d carries two severities (%s, %s); keep one\n", nfound, parts[1], parts[2] > "/dev/stderr"
         bad = 1; exit 2
@@ -231,7 +230,7 @@ record() {  # $1 pass, optional
     pass=$((n + 1))
   fi
   mkdir -p "$gitdir/ship-guard" || finding "cannot create $gitdir/ship-guard"
-  { printf '## Pass %s\n' "$pass"; cat; } >> "$kept" || finding "cannot write $kept"
+  { printf '## Pass %s\n' "$pass"; awk 1; } >> "$kept" || finding "cannot write $kept"
 }
 
 # The answers recorded so far, fenced as data, or nothing at all when none

@@ -128,7 +128,8 @@ build() {  # $1 case file, $2 name
   else
     git -C "$dir" checkout -q --detach "$parent" || finding "$2: cannot check out $parent"
     # shellcheck disable=SC2086  # paths is a space-separated list by contract
-    git -C "$dir" checkout -q "$commit" -- $paths || finding "$2: cannot take $paths from $commit"
+    git -C "$dir" restore -q --source="$commit" --staged --worktree -- $paths \
+      || finding "$2: cannot take $paths from $commit"
     git -C "$dir" -c user.name=review-eval -c user.email=review-eval@localhost commit -q --allow-empty -m case \
       || finding "$2: cannot commit the restricted paths"
   fi

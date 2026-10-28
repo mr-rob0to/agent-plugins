@@ -146,6 +146,17 @@ EOF
   [[ "$stderr" == "finding: finding 1 names two locations (a/b.py:10, a/c.py:20); split it, one location each"* ]]
 }
 
+@test "parse refuses a finding whose title names one location and whose body names another" {
+  run --separate-stderr parse <<'EOF'
+## Findings
+### High: `a/b.py:10` trusts the header
+Location: `a/c.py:20`
+EOF
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [[ "$stderr" == "finding: finding 1 names two locations (a/b.py:10, a/c.py:20); split it, one location each"* ]]
+}
+
 @test "parse refuses a finding that carries two different severity words" {
   run --separate-stderr parse <<'EOF'
 ## Findings
@@ -319,6 +330,19 @@ gated_repo() {
   cd "$d"
   git commit -q --allow-empty -m one
   "$SKILL_DIR/ship-guard" open
+}
+
+@test "record keeps an answer with no final newline apart from the next pass heading" {
+  gated_repo
+  printf '## Findings\n- High: `a.py:1` first.' | findings record 1
+  printf '## Findings\n- Low: `a.py:2` second.' | findings record 2
+  run --separate-stderr findings prior
+  [ "$status" -eq 0 ]
+  [ "${lines[3]}" = '- High: `a.py:1` first.' ]
+  [ "${lines[4]}" = "## Pass 2" ]
+  [ "${lines[6]}" = '- Low: `a.py:2` second.' ]
+  [ "${lines[7]}" = "</prior-findings>" ]
+  [ "${#lines[@]}" -eq 8 ]
 }
 
 @test "record and prior round-trip two passes in order inside the fence" {

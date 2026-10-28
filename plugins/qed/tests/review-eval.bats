@@ -192,6 +192,25 @@ repo_case() {  # $1 paths value or empty; prints nothing, sets CASE_COMMIT/CASE_
   [ "$(cat "$TEST_HOME/changed")" = "a.txt" ]
 }
 
+@test "paths keeps a file the commit deletes out of the reviewer's tree" {
+  fake_reviewer
+  local r="$TEST_HOME/private"
+  git init -q -b main "$r"
+  ( cd "$r" && printf 'a\n' > a.txt && printf 'c\n' > c.txt && git add -A && git commit -q -m one \
+      && git rm -q c.txt && printf 'a2\n' > a.txt && git add -A && git commit -q -m two )
+  mkdir -p "$TEST_HOME/cases"
+  {
+    echo "repo=$r"; echo "commit=$(git -C "$r" rev-parse HEAD)"; echo "parent=$(git -C "$r" rev-parse HEAD~1)"
+    echo "paths=a.txt c.txt"
+    echo "expect=bug"; echo "file=a.txt"; echo "lines=1-1"; echo "must_report=a changed"; echo "category=test"
+  } > "$TEST_HOME/cases/private.case"
+  answer '## Findings\n- High: a.txt:1 changed.\n  Type: test\n'
+  score "$TEST_HOME/cases" -- canned
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "private: hit" ]
+  [ "$(sort "$TEST_HOME/changed" | tr '\n' ' ')" = "a.txt c.txt " ]
+}
+
 @test "a missing commit is a stop" {
   fake_reviewer; repo_case ''
   sed -i.bak "s/^commit=.*/commit=0123456789012345678901234567890123456789/" "$TEST_HOME/cases/private.case"
