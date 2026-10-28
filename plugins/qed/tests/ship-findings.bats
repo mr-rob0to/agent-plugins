@@ -171,3 +171,111 @@ EOF
   [ "$status" -eq 2 ]
   [[ "$stderr" == "finding: usage: ship-findings parse | label <base> | record [<pass>] | prior"* ]]
 }
+
+# ---- label -------------------------------------------------------------------
+# Each parse line plus a sixth field: introduced when any line of the finding's
+# range is inside or one line from a hunk of the branch diff against the base,
+# deletions included; pre-existing when the whole range is clear of every hunk
+# or the file is untouched. No location, or no readable diff, is introduced.
+
+# A base commit with a ten-line file and a branch commit that changes line 5,
+# deletes line 8 (the check) and appends a line. The base is a remote ref, as
+# the gate reads it.
+labelled_repo() {
+  local d="$TEST_HOME/repo"
+  git init -q -b main "$d"
+  cd "$d"
+  mkdir -p app
+  printf 'line %s\n' 1 2 3 4 5 6 7 8 9 10 > app/file.txt
+  printf 'untouched\n' > other.txt
+  git add -A && git commit -q -m base
+  git update-ref refs/remotes/origin/main HEAD
+  git switch -q -c feat
+  # line 5 changed; line 8 removed; line 11 added.
+  printf 'line %s\n' 1 2 3 4 'five changed' 6 7 9 10 11 > app/file.txt
+  git commit -q -am branch
+}
+
+label() { findings label main; }
+
+@test "label marks a finding on an untouched base line pre-existing" {
+  labelled_repo
+  run --separate-stderr label <<'EOF2'
+## Findings
+- High: `app/file.txt:2` was always wrong.
+EOF2
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'High\tnone\tapp/file.txt\t2\t- High: `app/file.txt:2` was always wrong.\tpre-existing')" ]
+}
+
+@test "label marks a finding on a changed line introduced" {
+  labelled_repo
+  run --separate-stderr label <<'EOF2'
+## Findings
+- High: `app/file.txt:5` is wrong now.
+EOF2
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'\t'introduced ]]
+}
+
+@test "label marks the line after a deleted check introduced" {
+  labelled_repo
+  # Old line 8 is gone; what was line 9 is now line 8, the line after the hole.
+  run --separate-stderr label <<'EOF2'
+## Findings
+- High: `app/file.txt:8` runs without the check that used to precede it.
+EOF2
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'\t'introduced ]]
+}
+
+@test "label marks a range that starts in base code and ends in new code introduced" {
+  labelled_repo
+  run --separate-stderr label <<'EOF2'
+## Findings
+- Medium: `app/file.txt:9-10` the tail is unbounded.
+EOF2
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'\t'introduced ]]
+}
+
+@test "label marks a finding with no location introduced" {
+  labelled_repo
+  run --separate-stderr label <<'EOF2'
+## Findings
+- Medium: the retry has no bound anywhere.
+EOF2
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'\t'introduced ]]
+}
+
+@test "label marks a finding in an untouched file pre-existing" {
+  labelled_repo
+  run --separate-stderr label <<'EOF2'
+## Findings
+- Low: `other.txt:1` naming.
+EOF2
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'\t'pre-existing ]]
+}
+
+@test "label marks everything introduced when the diff cannot be read" {
+  labelled_repo
+  run --separate-stderr findings label nosuchbase <<'EOF2'
+## Findings
+- Low: `other.txt:1` naming.
+EOF2
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'\t'introduced ]]
+  [[ "$stderr" == "note: cannot read the diff against origin/nosuchbase; every finding is labelled introduced"* ]]
+}
+
+@test "label passes a parse refusal through unchanged" {
+  labelled_repo
+  run --separate-stderr label <<'EOF2'
+no header here
+EOF2
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [[ "$stderr" == "finding: the answer has no '## Findings' header"* ]]
+}

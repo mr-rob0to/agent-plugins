@@ -1,6 +1,6 @@
 # qed ship gate: review upgrades plan
 
-**Where this stands:** approved 2026-10-27, tasks 1 to 8, with open question 1 changed by the operator: Claude Opus is the default security reviewer (Task 8) / next: implementation in a fresh session, Task 1 first / blocked on: nothing
+**Where this stands:** approved 2026-10-27; Tasks 1 and 2 done on branch feat/qed-review-upgrades / next: Task 3, the review guide / blocked on: nothing
 
 **Goal:** make the gate's reviewers measurable against real bugs, let a repository brief its reviewers from the base branch, stop pre-existing defects from blocking a branch, and make fix-pass re-reviews converge instead of repeating themselves.
 
@@ -46,18 +46,18 @@
 ## Task 1: `ship-findings parse`
 **Files:** create `skills/ship/ship-findings`; create `tests/ship-findings.bats`
 **Interfaces:** produces `ship-findings parse < answer`, one tab-separated line per finding: `severity<TAB>type<TAB>file<TAB>lines<TAB>first line of text`. The region is the text after `## Findings` up to the next line starting `## `. A finding starts at a blank line, a numbered item (`^[0-9]+[.)]`), a bullet (`^[-*] `) or a `###` heading. Severity is the first of Critical, High, Important, Medium, Low in the block; `none` when absent. Type is the text after a `Type:` label; `none` when absent. The location is the first token of a path containing `/` or `.` followed by `:digits` or `:digits-digits`, with backticks and brackets stripped; `-` and `0` when absent. A block with two locations or two severity words is a `finding:` stop (exit 2), never a guess. `No findings.` yields no output, exit 0. A missing header, or a header with nothing under it, is exit 2.
-- [ ] Tests first: a Codex-shaped answer, a Claude-shaped answer, numbered items with no blank lines between them, a step 7 answer whose `## Checked clean` text must not parse as findings, `No findings.`, a missing header, an empty header, a block with two locations, a finding with no location, a finding with a `Type:` line.
-- [ ] Implement with awk only; no bash 4 features.
+- [x] Tests first: a Codex-shaped answer, a Claude-shaped answer, numbered items with no blank lines between them, a step 7 answer whose `## Checked clean` text must not parse as findings, `No findings.`, a missing header, an empty header, a block with two locations, a finding with no location, a finding with a `Type:` line.
+- [x] Implement with awk only; no bash 4 features.
 **Done when:** `bats tests/ship-findings.bats` prints `ok` for each case above; removing the `## ` region end makes the `Checked clean` test print `not ok`.
 
 ## Task 2: pre-existing labels
 **Files:** modify `skills/ship/ship-findings`, `SKILL.md` (step 6 reading, step 7 reading, fix-pass prose, stop table, step 8 body), `PULL_REQUEST_TEMPLATE.md`; modify `tests/ship-findings.bats`, `tests/contract.bats`
 **Interfaces:** consumes Task 1's parse lines. Produces `ship-findings label <base> < answer`: each parse line plus a sixth field `introduced` or `pre-existing`, decided from the hunks of `git diff -U0 origin/<base>...HEAD`, deletion hunks included (a deletion at new-side line n covers n-1 to n). Introduced when any line of the range is inside or one line from a hunk of that file, when there is no location, or when the diff cannot be read. Pre-existing otherwise.
-- [ ] Tests on a temp repo with a base commit and a branch commit: a finding on an untouched base line is `pre-existing`; on a changed line `introduced`; on the line after a deleted check `introduced`; a range whose first line is base code and last line is new is `introduced`; no location `introduced`.
-- [ ] `SKILL.md` step 6 and step 7: after the fail-closed read, run `label`. Pre-existing findings do not block and are not fix-pass triggers; the fix-pass paragraph says only `introduced` findings open one. **Exception:** a pre-existing Critical or High from step 7 is a stop-and-ask, since a branch that makes a live hole visible is the operator's call.
-- [ ] Step 8 body: pre-existing findings go under a `Pre-existing` line in Reviews as file, line, severity and Type only; the finding's text stays in the session and never in the PR body of a public repository. An author may promote one to blocking; never the reverse.
-- [ ] `PULL_REQUEST_TEMPLATE.md`: add `- Pre-existing: file, line, severity and type of findings in code this branch did not change; logged, not blocking` under Reviews.
-- [ ] Contract tests: step 6 and step 7 call `"$SHIP_DIR/ship-findings" label`; the fix-pass paragraph names `introduced`; the stop table has no pre-existing row except the step 7 Critical/High one; the template carries the line.
+- [x] Tests on a temp repo with a base commit and a branch commit: a finding on an untouched base line is `pre-existing`; on a changed line `introduced`; on the line after a deleted check `introduced`; a range whose first line is base code and last line is new is `introduced`; no location `introduced`.
+- [x] `SKILL.md` step 6 and step 7: after the fail-closed read, run `label`. Pre-existing findings do not block and are not fix-pass triggers; the fix-pass paragraph says only `introduced` findings open one. **Exception:** a pre-existing Critical or High from step 7 is a stop-and-ask, since a branch that makes a live hole visible is the operator's call.
+- [x] Step 8 body: pre-existing findings go under a `Pre-existing` line in Reviews as file, line, severity and Type only; the finding's text stays in the session and never in the PR body of a public repository. An author may promote one to blocking; never the reverse.
+- [x] `PULL_REQUEST_TEMPLATE.md`: add `- Pre-existing: file, line, severity and type of findings in code this branch did not change; logged, not blocking` under Reviews.
+- [x] Contract tests: step 6 and step 7 call `"$SHIP_DIR/ship-findings" label`; the fix-pass paragraph names `introduced`; the stop table has no pre-existing row except the step 7 Critical/High one; the template carries the line.
 **Done when:** `bats tests/ship-findings.bats tests/contract.bats` all `ok`; removing the adjacency (one line) rule makes the deleted-check test `not ok`.
 
 ## Task 3: `REVIEW.md` from the base branch

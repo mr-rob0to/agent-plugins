@@ -294,8 +294,11 @@ if [ "$ANSWER" = "$RUN_DIR/answer" ]; then
 else
   echo "usage: input=unknown output=unknown cache_read=unknown cache_write=unknown"
 fi
+[ "$STATUS" -eq 0 ] || { rm -rf "$RUN_DIR"; echo "finding: the reviewer exited $STATUS" >&2; exit 2; }
+"$SHIP_DIR/ship-findings" label "$BASE" < "$ANSWER"
+LABELLED=$?
 rm -rf "$RUN_DIR"
-[ "$STATUS" -eq 0 ] || { echo "finding: the reviewer exited $STATUS" >&2; exit 2; }
+[ "$LABELLED" -eq 0 ] || exit 2
 ```
 
 `$REVIEWER` is deliberately unquoted: the value is a command line and its words
@@ -348,23 +351,40 @@ there are no stated criteria and send none.
 neither a finding nor the sentinel under it. Never treat absence as clean: a
 reviewer that crashed, timed out, or answered something else looks exactly like
 a reviewer that found nothing, and the second reading is the one that ships bugs.
+The block's last call, `"$SHIP_DIR/ship-findings" label`, makes the same
+reading mechanically: it refuses an answer with no header or nothing under it.
+
+**Label each finding introduced or pre-existing.** The `label` call prints every
+finding again with a last field, `introduced` or `pre-existing`, decided from
+the hunks of the branch diff: a finding whose lines touch or sit one line from
+anything this branch changed, a deletion included, is introduced; a finding in
+code the branch did not touch is pre-existing. A finding with no `file:line` is
+introduced. **Pre-existing findings do not block and do not open a fix pass.**
+They are logged in the pull request (step 8) and nothing more; an author may
+promote one to blocking, never the reverse. A `label` refusal that names a
+finding it cannot place (two locations, or two severities, in one finding) is
+not a gate stop: split that finding by hand, one location each, and run
+`label` again on the edited answer. A refusal for a missing header is the
+fail-closed stop above.
 
 Then:
 
 - **Verify every finding yourself** before acting on it, against the code and a reachable failure
   or attack path. Reviewers are often right and sometimes confidently wrong.
-- **Verified Critical or High findings block delivery**, including ones a reviewer labels
-  Important. Fix lower findings or defer them explicitly in the body with a reason.
+- **Verified Critical or High findings labelled `introduced` block delivery**, including ones a
+  reviewer labels Important. Fix lower introduced findings or defer them explicitly in the body
+  with a reason. A pre-existing finding is logged, whatever its severity.
 - Where a proposed fix is really a design decision, surface it to the user. Do not decide.
 - **Every fix commit gets a review that covers the changed code**, scoped to the new commits, so
   round two does not re-litigate round one. There is no Critical-only exception: the guard already
   proves which commit each phase saw, and a fix that no reviewer read is a commit going out unread
   whatever its severity was.
 
-**Fixing anything is a fix pass.** Run `"$SHIP_GUARD" fix-pass`, make the fix,
-then record every phase again from step 4 onward: the checks, this review, and
-the security pass. A fix pass clears all three because a fix is code, and the
-commit going out is then code that none of the three has seen.
+**Fixing anything is a fix pass.** Only `introduced` findings open one: a
+pre-existing finding is not a fix-pass trigger. Run `"$SHIP_GUARD" fix-pass`,
+make the fix, then record every phase again from step 4 onward: the checks,
+this review, and the security pass. A fix pass clears all three because a fix
+is code, and the commit going out is then code that none of the three has seen.
 
 Recording `review` again asserts one of two things, and the pull request body
 says which: the reviewer re-ran scoped to the new commits, because a Critical
@@ -476,6 +496,11 @@ have to guess:
 
 **Read this answer fail-closed too.** Both headers must be there. A missing
 header, or a header with neither a finding nor the sentinel under it, is a stop.
+The block's `"$SHIP_DIR/ship-findings" label "$BASE"` call labels this answer
+the same way as step 6's, and the labels mean the same: an `introduced`
+finding is this branch's to fix, a `pre-existing` one is logged. **The one
+exception is a pre-existing Critical or High from this audit: stop and ask.**
+A branch that makes a live hole visible is the operator's call, not a label.
 
 **A security fix is a fix pass like any other.** `"$SHIP_GUARD" fix-pass`
 clears this gate's phases together, and every one of them is recorded again
@@ -515,9 +540,9 @@ Then apply the same discipline as step 6:
 - **Verify every finding yourself** and confirm the attack path before acting.
 - A finding with no statable attacker, input, and gain is a hardening suggestion,
   not a vulnerability. Label it as such rather than inflating it.
-- **Critical or High findings block the PR.** Fix them on this branch, then
+- **Introduced Critical or High findings block the PR.** Fix them on this branch, then
   re-audit the new commits. Do not open the PR with them outstanding and do not
-  file them as follow-ups.
+  file them as follow-ups. A pre-existing Critical or High is the stop-and-ask above.
 - Medium and Low: fix or record explicitly in the PR body with a rationale.
 - **"No findings" must be stated, not implied.** Record what was checked and found
   clean, so a later reader can tell a passed audit from a skipped one.
@@ -598,6 +623,11 @@ review mode ran and the reason for it**, the review findings with how each was
 resolved, an explicit note when a review came back clean, each review run's
 `usage:` line from steps 6 and 7, and anything deliberately deferred. **Verbose
 material goes inside `<details>`** so the body stays readable.
+
+Pre-existing findings go under the template's `Pre-existing` line in Reviews
+as file, line, severity and Type only. The finding's text stays in the session
+and never in the pull request body of a public repository: it describes a live
+defect in merged code.
 
 **Name the mode in words, not only in the attestation.** A combined gate ran one reviewer, and a
 reader who cannot see that stated reads two steps and assumes a security pass happened. Say which
@@ -721,6 +751,7 @@ gh pr edit --title "$TITLE" --body-file "$BODY"
 | Tests, lint, or typecheck red after a genuine fix attempt | Shipping red is not shipping |
 | Reviewer raised a design question, not a bug | That call is the user's |
 | Critical or High security finding | Must be fixed and re-audited before the PR opens |
+| A pre-existing Critical or High from the security audit | A branch that makes a live hole visible is the operator's call; ask |
 | Security review could not be run in a separate gate | An unaudited PR is not shipped |
 | The review mode could not be established | Separate is the answer, not a reason to stop, but a gate that cannot say why is |
 | A sensitive category found after a combined gate opened | Open a fresh gate on separate; a combined gate cannot satisfy it |

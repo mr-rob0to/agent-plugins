@@ -17,6 +17,7 @@ Suggested file order. What needs thought, what is mechanical.
 - Correctness (reviewer and model): N findings, fixed / logged
 - Security: in a combined gate, the areas the one review checked and found clean; in a separate
   gate, the audit's own findings and clean areas
+- Pre-existing: file, line, severity and type of findings in code this branch did not change; logged, not blocking
 <details><summary>Full findings</summary>
 
 </details>

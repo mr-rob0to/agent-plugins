@@ -466,9 +466,21 @@ review_block() {
     inside { text = text $0 "\n" }'
 }
 
+# The block labels the answer against the branch diff, so it runs inside a
+# repository with a base ref and a branch commit: base.txt is untouched by the
+# branch, new.txt is what the branch adds.
+gate_repo() {
+  GATE_REPO="$TEST_HOME/repo"
+  git init -q -b main "$GATE_REPO"
+  ( cd "$GATE_REPO" && printf 'one\ntwo\n' > base.txt && git add -A && git commit -q -m base \
+      && git update-ref refs/remotes/origin/main HEAD && git switch -q -c feat \
+      && printf 'added\n' > new.txt && git add -A && git commit -q -m branch )
+}
+
 gate_fakes() {  # $1 the reviewer command line, written where the operator would
   mkdir -p "$TEST_HOME/fake" "$TEST_HOME/tmp" "$HOME/.config/ship"
   printf '%s\n' "$1" > "$HOME/.config/ship/reviewer"
+  gate_repo
   cat > "$TEST_HOME/fake/codex" <<'FAKE'
 #!/bin/sh
 answer=""
@@ -492,20 +504,25 @@ if [ -p /dev/stdin ] || [ -S /dev/stdin ]; then echo "codex: input left open, wa
 ' "$TEST_HOME/fake/codex" && rm -f "$TEST_HOME/fake/codex.bak"
   fi
   printf '#!/bin/sh\nprintf "## Findings\\nNo findings.\\n"\n' > "$TEST_HOME/fake/other-reviewer"
-  chmod +x "$TEST_HOME/fake/codex" "$TEST_HOME/fake/other-reviewer"
+  # A reviewer that reports one finding in code the branch did not touch and
+  # one in the file it added, so the block's labelling can be seen.
+  printf '#!/bin/sh\nprintf "## Findings\\n- High: base.txt:1 was always wrong.\\n- Low: new.txt:1 is new.\\n"\n' > "$TEST_HOME/fake/finding-reviewer"
+  chmod +x "$TEST_HOME/fake/codex" "$TEST_HOME/fake/other-reviewer" "$TEST_HOME/fake/finding-reviewer"
 }
 
 run_review_block() {
   block="$(review_block)"
   [ -n "$block" ] || { echo "step 6 carries no reviewer block"; return 1; }
-  run env SHIP_ENV="$SKILL_DIR/ship-env" BASE=main TMPDIR="$TEST_HOME/tmp" \
+  cd "$GATE_REPO"
+  run env SHIP_ENV="$SKILL_DIR/ship-env" SHIP_DIR="$SKILL_DIR" BASE=main TMPDIR="$TEST_HOME/tmp" \
     SHIP_AUTHOR="${GATE_AUTHOR-claude}" PATH="$TEST_HOME/fake:$PATH" bash -c "$block"
 }
 
 run_review_block_unstated() {
   block="$(review_block)"
   [ -n "$block" ] || { echo "step 6 carries no reviewer block"; return 1; }
-  run env -u SHIP_AUTHOR SHIP_ENV="$SKILL_DIR/ship-env" BASE=main TMPDIR="$TEST_HOME/tmp" \
+  cd "$GATE_REPO"
+  run env -u SHIP_AUTHOR SHIP_ENV="$SKILL_DIR/ship-env" SHIP_DIR="$SKILL_DIR" BASE=main TMPDIR="$TEST_HOME/tmp" \
     PATH="$TEST_HOME/fake:$PATH" bash -c "$block"
 }
 
@@ -527,8 +544,9 @@ run_review_block_unstated() {
   FAKE_STDIN_CHECK=1 gate_fakes 'codex exec -m some-model --sandbox read-only'
   block="$(review_block)"
   [ -n "$block" ] || { echo "step 6 carries no reviewer block"; return 1; }
-  run bash -c 'echo pending | env SHIP_ENV="$1" BASE=main TMPDIR="$2" PATH="$3" SHIP_AUTHOR=claude bash -c "$4"' _ \
-    "$SKILL_DIR/ship-env" "$TEST_HOME/tmp" "$TEST_HOME/fake:$PATH" "$block"
+  cd "$GATE_REPO"
+  run bash -c 'echo pending | env SHIP_ENV="$1" SHIP_DIR="$5" BASE=main TMPDIR="$2" PATH="$3" SHIP_AUTHOR=claude bash -c "$4"' _ \
+    "$SKILL_DIR/ship-env" "$TEST_HOME/tmp" "$TEST_HOME/fake:$PATH" "$block" "$SKILL_DIR"
   [ "$status" -eq 0 ]
   [ "${lines[0]}" = "## Findings" ]
 }
@@ -579,4 +597,59 @@ run_review_block_unstated() {
   [ "${lines[2]}" = "usage: input=unknown output=unknown cache_read=unknown cache_write=unknown" ]
   [ "${#lines[@]}" -eq 3 ]
   [ -z "$(ls -A "$TEST_HOME/tmp")" ]
+}
+
+# ---- pre-existing findings -----------------------------------------------------
+# A finding in code the branch did not touch is logged, not fixed. The block
+# labels every finding, and the prose makes only introduced ones block or open
+# a fix pass.
+
+@test "the block labels each finding introduced or pre-existing against the branch diff" {
+  gate_fakes 'finding-reviewer --read-only'
+  run_review_block
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "## Findings" ]
+  [ "${lines[3]}" = "usage: input=unknown output=unknown cache_read=unknown cache_write=unknown" ]
+  [ "${lines[4]}" = "$(printf 'High\tnone\tbase.txt\t1\t- High: base.txt:1 was always wrong.\tpre-existing')" ]
+  [ "${lines[5]}" = "$(printf 'Low\tnone\tnew.txt\t1\t- Low: new.txt:1 is new.\tintroduced')" ]
+  [ "${#lines[@]}" -eq 6 ]
+  [ -z "$(ls -A "$TEST_HOME/tmp")" ]
+}
+
+@test "the block's label call is the mechanical fail-closed read" {
+  gate_fakes 'silent-reviewer'
+  printf '#!/bin/sh\necho "all good, nothing to report"\n' > "$TEST_HOME/fake/silent-reviewer"
+  chmod +x "$TEST_HOME/fake/silent-reviewer"
+  run_review_block
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: the answer has no '## Findings' header"* ]]
+  [ -z "$(ls -A "$TEST_HOME/tmp")" ]
+}
+
+@test "step 6 and step 7 label the answer, and only introduced findings open a fix pass" {
+  six="$(unwrapped '/^## Step 6\./,/^## Step 7\./p' "$SHIP_MD")"
+  seven="$(unwrapped '/^## Step 7\./,/^## Step 8\./p' "$SHIP_MD")"
+  [[ "$six" == *'"$SHIP_DIR/ship-findings" label "$BASE"'* ]]
+  [[ "$seven" == *'"$SHIP_DIR/ship-findings" label "$BASE"'* ]]
+  [[ "$six" == *'Pre-existing findings do not block and do not open a fix pass'* ]]
+  # The fix-pass paragraph itself, not the step: the trigger has to be named
+  # where the pass is opened.
+  para="$(awk '/^\*\*Fixing anything is a fix pass\.\*\*/ { on = 1 } on && /^$/ { exit } on' "$SHIP_MD" | tr '\n' ' ')"
+  [ -n "$para" ] || { echo "no fix-pass paragraph"; return 1; }
+  [[ "$para" == *'Only `introduced` findings open one'* ]]
+  [[ "$six" == *'never the reverse'* ]]
+  # A refusal over a finding the helper cannot place is a hand edit, not a stop.
+  [[ "$six" == *'is not a gate stop'* ]]
+}
+
+@test "the stop table's only pre-existing row is the security Critical or High, and the body logs the rest" {
+  table="$(sed -n '/^## Stop and report/,/^## Red flags/p' "$SHIP_MD" | grep -i 'pre-existing' || true)"
+  [ "$(printf '%s\n' "$table" | grep -c .)" -eq 1 ] || { echo "pre-existing rows: $table"; return 1; }
+  [[ "$table" == *'Critical or High from the security audit'* ]]
+  seven="$(unwrapped '/^## Step 7\./,/^## Step 8\./p' "$SHIP_MD")"
+  [[ "$seven" == *'pre-existing Critical or High from this audit: stop and ask'* ]]
+  eight="$(unwrapped '/^## Step 8\./,/^## Step 9\./p' "$SHIP_MD")"
+  [[ "$eight" == *'file, line, severity and Type only'* ]]
+  [[ "$eight" == *'never in the pull request body of a public repository'* ]]
+  grep -qF -- '- Pre-existing: file, line, severity and type of findings in code this branch did not change; logged, not blocking' "$SKILL_DIR/PULL_REQUEST_TEMPLATE.md"
 }

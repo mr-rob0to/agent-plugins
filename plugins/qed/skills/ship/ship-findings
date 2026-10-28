@@ -135,11 +135,77 @@ parse() {
   '
 }
 
+note() { printf 'note: %s\n' "$*" >&2; }
+
+# Each parse line with a sixth field: introduced or pre-existing. The answer
+# comes from the hunks of the branch diff against the base, read with no
+# context lines, and not from blame: a finding whose range touches or sits one
+# line from any hunk of its file is introduced, deletions included, since the
+# line after a deleted check is where the missing check now bites. A deletion
+# at new-side line n covers n-1 to n. Pre-existing only when the whole range is
+# clear of every hunk, or the file is untouched. A finding with no location,
+# and every finding when the diff cannot be read, is introduced: the error is
+# on the blocking side.
+label() {  # $1 base
+  local parsed hunks readable=1
+  parsed="$(parse)" || exit $?
+  [ -n "$parsed" ] || return 0
+  hunks="$(mktemp)" || finding "cannot create a temporary file"
+  if ! git diff -U0 --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ "origin/$1...HEAD" > "$hunks" 2>/dev/null; then
+    note "cannot read the diff against origin/$1; every finding is labelled introduced"
+    readable=0
+  fi
+  # The hunks are read in BEGIN rather than as a first file: awk's usual
+  # two-file idiom reads the second file as the first when the first is empty,
+  # and an empty diff is exactly the case where every finding is pre-existing.
+  printf '%s\n' "$parsed" | awk -F '\t' -v readable="$readable" -v hunks="$hunks" '
+    function same_file(a, b) {
+      sub(/^\.\//, "", a)
+      return a == b || substr(b, length(b) - length(a)) == "/" a || substr(a, length(a) - length(b)) == "/" b
+    }
+    BEGIN {
+      n = 0; f = ""; old = ""
+      while ((getline line < hunks) > 0) {
+        if (line ~ /^--- /) { old = line; sub(/^--- /, "", old); sub(/^a\//, "", old); continue }
+        if (line ~ /^\+\+\+ /) {
+          f = line; sub(/^\+\+\+ /, "", f)
+          if (f == "/dev/null") f = old; else sub(/^b\//, "", f)
+          continue
+        }
+        if (line ~ /^@@ /) {
+          match(line, /\+[0-9]+(,[0-9]+)?/)
+          spec = substr(line, RSTART + 1, RLENGTH - 1)
+          count = (split(spec, p, ",") > 1) ? p[2] + 0 : 1
+          start = p[1] + 0
+          n++
+          hf[n] = f
+          if (count == 0) { hlo[n] = start - 1; hhi[n] = start }
+          else { hlo[n] = start; hhi[n] = start + count - 1 }
+        }
+      }
+      close(hunks)
+    }
+    {
+      verdict = "pre-existing"
+      if (!readable || $3 == "-") verdict = "introduced"
+      else {
+        k = split($4, r, "-"); lo = r[1] + 0; hi = (k > 1) ? r[2] + 0 : lo
+        for (i = 1; i <= n; i++)
+          if (same_file($3, hf[i]) && lo - 1 <= hhi[i] && hi + 1 >= hlo[i]) { verdict = "introduced"; break }
+      }
+      print $0 "\t" verdict
+    }'
+  rm -f "$hunks"
+}
+
 cmd="${1:-}"; shift || true
 case "$cmd" in
   parse)
     [ $# -eq 0 ] || finding "$usage"
     parse || exit $? ;;
+  label)
+    [ $# -eq 1 ] || finding "$usage"
+    label "$1" ;;
   '') finding "$usage" ;;
   *) finding "$usage" ;;
 esac
