@@ -29,7 +29,8 @@ usage="usage: ship-findings parse | label <base> | record [<pass>] | prior"
 # Medium or Low on the block's first line, or in the whole block when the first
 # line has none; the location is the first file:line token read the same way,
 # a token being a path holding "/" or "." followed by ":digits" or
-# ":digits-digits", with backticks, brackets and stars stripped. Two different
+# ":digits-digits", with the backticks, brackets and stars around it stripped
+# and the ones inside it kept, since a route file can be named "[id]". Two different
 # severities, or two different locations, on the line or lines that supply them
 # is a refusal and never a guess: the gate cannot label a finding it cannot
 # place. The type is the text after a "Type:" label anywhere in the block.
@@ -41,8 +42,8 @@ parse() {
   awk '
     function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
     function clean_token(t) {
-      gsub(/[`()\[\]*,;]/, "", t)
-      sub(/[.:]+$/, "", t)
+      sub(/^[`(\[*]+/, "", t)
+      sub(/[`)\]*,;.:]+$/, "", t)
       return t
     }
     # The severity words of a line, in order, as one space-separated string of
@@ -152,7 +153,9 @@ label() {  # $1 base
   parsed="$(parse)" || exit $?
   [ -n "$parsed" ] || return 0
   hunks="$(mktemp)" || finding "cannot create a temporary file"
-  if ! git diff -U0 --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ "origin/$1...HEAD" > "$hunks" 2>/dev/null; then
+  # quotePath off, so a path with a non-ASCII byte comes out as written and not
+  # as a quoted, escaped spelling the reviewer's file name would never equal.
+  if ! git -c core.quotePath=false diff -U0 --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ "origin/$1...HEAD" > "$hunks" 2>/dev/null; then
     note "cannot read the diff against origin/$1; every finding is labelled introduced"
     readable=0
   fi
@@ -196,7 +199,11 @@ label() {  # $1 base
       }
       print $0 "\t" verdict
     }'
+  # The labels are the gate's reading of the answer, so a labelling that died
+  # half way is a refusal, never a shorter list that reads as the labels.
+  local labelled=$?
   rm -f "$hunks"
+  [ "$labelled" -eq 0 ] || finding "could not label the findings; awk exited $labelled"
 }
 
 # Where the answers for this branch are kept: beside the guard file, under the

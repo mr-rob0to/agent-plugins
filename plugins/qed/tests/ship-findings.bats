@@ -206,6 +206,15 @@ EOF
   [ "${#lines[@]}" -eq 1 ]
 }
 
+@test "parse keeps the brackets inside a route file's name" {
+  run --separate-stderr parse <<'EOF'
+## Findings
+1. High: (`app/api/users/[id]/route.ts:12`) trusts the id.
+EOF
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "$(printf 'High\tnone\tapp/api/users/[id]/route.ts\t12\t1. High: (`app/api/users/[id]/route.ts:12`) trusts the id.')" ]
+}
+
 @test "an unknown verb is a finding naming the verbs there are" {
   run --separate-stderr findings score
   [ "$status" -eq 2 ]
@@ -287,6 +296,39 @@ EOF2
 EOF2
   [ "$status" -eq 0 ]
   [[ "$output" == *$'\t'introduced ]]
+}
+
+@test "label marks a changed line in a bracketed or non-ASCII path introduced" {
+  labelled_repo
+  mkdir -p 'app/[id]'
+  printf 'a\n' > 'app/[id]/route.ts'
+  printf 'b\n' > $'caf\303\251.py'
+  git add -A && git commit -q -m paths
+  run --separate-stderr label <<'EOF2'
+## Findings
+1. High: `app/[id]/route.ts:1` trusts the id.
+2. High: `café.py:1` is wrong.
+EOF2
+  [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 2 ]
+  [[ "${lines[0]}" == *$'\t'introduced ]]
+  [[ "${lines[1]}" == *$'\t'introduced ]]
+}
+
+# ship-findings finds awk on PATH, so a fake that dies on label's call, the one
+# run with -F, stands in for an awk that cannot read the diff.
+@test "label refuses when its awk dies, rather than printing fewer labels" {
+  labelled_repo
+  mkdir -p "$TEST_HOME/fakeawk"
+  printf '#!/bin/sh\n[ "$1" != -F ] || exit 2\nexec /usr/bin/awk "$@"\n' > "$TEST_HOME/fakeawk/awk"
+  chmod +x "$TEST_HOME/fakeawk/awk"
+  PATH="$TEST_HOME/fakeawk:$PATH" run --separate-stderr label <<'EOF2'
+## Findings
+- High: `app/file.txt:5` is wrong now.
+EOF2
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"finding: could not label the findings; awk exited 2"* ]]
 }
 
 @test "label marks a finding in an untouched file pre-existing" {
