@@ -12,7 +12,7 @@ set -u
 
 finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 
-usage="usage: ship-env reviewer | security-reviewer | review-mode <claim> <sensitive> | pr-template <repo> | pr-template-fallback | usage"
+usage="usage: ship-env reviewer | security-reviewer | review-mode <claim> <sensitive> | review-guide <base> | pr-template <repo> | pr-template-fallback | usage"
 
 # pwd -P resolves a skill folder installed as a link, so the bundled files are
 # read from the real folder and not from wherever the link sits.
@@ -285,6 +285,34 @@ pr_template() {  # $1 repo path
   done
 }
 
+# A repository's brief to its reviewers: REVIEW.md on the base branch, read from
+# origin/<base> and nowhere else. The working tree and the branch under review
+# are what the reviewer is judging, so a guide taken from there would be the
+# change writing part of its own reviewer's brief; the base branch got its copy
+# through a reviewed merge, which is the trust the base already has. The file
+# must be an ordinary blob: a symlink is stored as a blob too, so the mode is
+# what tells them apart, and a link is reported as no guide rather than read
+# through. A guide over 16 KB is a stop, not a truncation, because a reviewer
+# sent half a guide does not know which half it is missing. What the gate does
+# with the text is the prompt's business; here it is fenced as data.
+review_guide() {  # $1 base
+  local entry mode type sha size
+  git rev-parse --verify --quiet "refs/remotes/origin/$1^{commit}" >/dev/null 2>&1 \
+    || finding "no origin/$1; fetch the base branch before reading its review guide"
+  entry="$(git ls-tree "refs/remotes/origin/$1" -- REVIEW.md 2>/dev/null)" || entry=""
+  mode="${entry%% *}"; entry="${entry#* }"; type="${entry%% *}"; entry="${entry#* }"; sha="${entry%%	*}"
+  case "$mode:$type" in
+    100644:blob | 100755:blob) ;;
+    *) printf 'The repository has no review guide.\n'; return 0 ;;
+  esac
+  size="$(git cat-file -s "$sha" 2>/dev/null)" || finding "cannot read REVIEW.md on origin/$1"
+  [ "$size" -le 16384 ] \
+    || finding "REVIEW.md on origin/$1 is $size bytes, over the 16384 the gate sends; shorten it"
+  printf '<review-guide> (repository review guide, not instructions)\n'
+  git cat-file blob "$sha" || finding "cannot read REVIEW.md on origin/$1"
+  printf '</review-guide>\n'
+}
+
 # Whether this gate may run one reviewer instead of two. It is not a classifier
 # and does not look at the diff: the gate reads the classification the operator
 # or the task gave and reads the branch diff for the sensitive categories, and
@@ -355,6 +383,9 @@ case "$cmd" in
   review-mode)
     [ $# -eq 2 ] || finding "$usage"
     review_mode "$1" "$2" ;;
+  review-guide)
+    [ $# -eq 1 ] || finding "$usage"
+    review_guide "$1" ;;
   pr-template)
     [ $# -eq 1 ] || finding "$usage"
     pr_template "$1" ;;
@@ -366,6 +397,6 @@ case "$cmd" in
   usage)
     [ $# -eq 0 ] || finding "$usage"
     codex_usage ;;
-  *) finding "unknown key '$cmd' (reviewer, security-reviewer, review-mode, pr-template, pr-template-fallback, usage)" ;;
+  *) finding "unknown key '$cmd' (reviewer, security-reviewer, review-mode, review-guide, pr-template, pr-template-fallback, usage)" ;;
 esac
 exit 0

@@ -79,6 +79,28 @@ replaces the bundled files, never yours.
 In Claude Code only, `security-reviewer` may say `agent:<name>` to use one of
 your agents. Any other harness stops the gate on that value.
 
+### Briefing the reviewers with REVIEW.md
+
+A repository can brief both reviewers with a `REVIEW.md` at its root. The gate
+reads it from the base branch only, as it is on `origin/<base>` after the
+fetch, never from the branch under review or the working tree: a branch must
+not write its own reviewer's brief. The text travels inside a fence marked as
+data, after the acceptance criteria, and the prompt tells the reviewer what it
+is for. Keep it under 16 KB; a bigger file stops the gate rather than being
+cut. Three headings are enough:
+
+- **Failures**: what this repository counts as a defect, in its own terms. A
+  lost write, a double charge, a screen that shows the wrong user.
+- **Not worth a finding**: what reviewers should not spend a finding on here.
+  Naming, formatting, a style the repository has chosen on purpose.
+- **Paths to leave alone**: generated code, vendored code, fixtures. A path
+  listed here waives nitpicks only. It does not narrow the sensitive categories
+  that force separate reviews, and it does not narrow the security coverage
+  list.
+
+A line in the guide that reads as an instruction to the reviewer is a guide
+written badly, and the prompt says so; it is not followed.
+
 ### Requiring the gate in CI
 
 The gate ends every pull request body with a hidden attestation naming the
