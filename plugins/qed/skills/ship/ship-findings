@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# Reads a reviewer's answer into findings the gate can act on: one line per
+# finding with a severity, a type, a file, a line range and the finding's first
+# line. Called by SKILL.md, which sits beside it.
+#
+# It lives beside SKILL.md for the reasons ship-guard does: the skill folder is
+# installed or copied as one unit and the helper travels with it, and /ship runs
+# inside a project that knows nothing about where the skill came from. So it
+# sources nothing and carries its own finding().
+set -u
+
+finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
+
+usage="usage: ship-findings parse | label <base> | record [<pass>] | prior"
+
+# The answer on stdin, as the reviewer wrote it. What is read is the region
+# under a literal "## Findings" header up to the next "## " header, so a
+# step 7 answer's "## Checked clean" list never reads as findings.
+#
+# The region is cut into blocks. A blank line ends one. A numbered item, a
+# "###" heading, and a bullet at the left margin start one, except that a
+# bullet directly under a numbered item or a heading is that finding's detail:
+# Claude writes "**1. High: ...**" and puts the attack and the fix in bullets
+# under it, and Codex writes one bullet per finding.
+#
+# From each block: the severity is the first of Critical, High, Important,
+# Medium or Low on the block's first line, or in the whole block when the first
+# line has none; the location is the first file:line token read the same way,
+# a token being a path holding "/" or "." followed by ":digits" or
+# ":digits-digits", with backticks, brackets and stars stripped. Two different
+# severities, or two different locations, on the line or lines that supply them
+# is a refusal and never a guess: the gate cannot label a finding it cannot
+# place. The type is the text after a "Type:" label anywhere in the block.
+#
+# Missing header: refusal. Header with nothing under it: refusal. The single
+# line "No findings." under it: nothing printed, exit 0. Absence is never read
+# as clean, by anything here.
+parse() {
+  awk '
+    function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
+    function clean_token(t) {
+      gsub(/[`()\[\]*,;]/, "", t)
+      sub(/[.:]+$/, "", t)
+      return t
+    }
+    # The severity words of a line, in order, as one space-separated string of
+    # distinct words in their first-seen spelling. Whole words only, any case.
+    function severities(line,   n, w, i, out, k, seen) {
+      n = split(line, w, /[^A-Za-z]+/)
+      out = ""; delete seen
+      for (i = 1; i <= n; i++) {
+        k = tolower(w[i])
+        if (k == "critical" || k == "high" || k == "important" || k == "medium" || k == "low") {
+          if (!(k in seen)) { seen[k] = 1; out = out (out == "" ? "" : " ") w[i] }
+        }
+      }
+      return out
+    }
+    # The locations of a line, in order, distinct.
+    function locations(line,   n, w, i, t, out, seen) {
+      n = split(line, w, /[ \t]+/)
+      out = ""; delete seen
+      for (i = 1; i <= n; i++) {
+        t = clean_token(w[i])
+        if (t ~ /^[^:]*[\/.][^:]*:[0-9]+(-[0-9]+)?$/ && !(t in seen)) {
+          seen[t] = 1; out = out (out == "" ? "" : " ") t
+        }
+      }
+      return out
+    }
+    function first_of(a, b) { return a != "" ? a : b }
+    function emit(   sev, loc, typ, text, line, i, n, lines, first, whole, s, l, parts, p, file, range, rest) {
+      if (block == "") return
+      if (sentinel && nfound == 0 && trim(block) == "No findings.") { block = ""; opener = ""; return }
+      nfound++
+      n = split(block, lines, "\n")
+      first = lines[1]
+      sev = severities(first); loc = locations(first)
+      if (sev == "") sev = severities(block)
+      if (loc == "") loc = locations(block)
+      if (split(sev, parts, " ") > 1) {
+        printf "finding: finding %d carries two severities (%s, %s); keep one\n", nfound, parts[1], parts[2] > "/dev/stderr"
+        bad = 1; exit 2
+      }
+      if (split(loc, parts, " ") > 1) {
+        printf "finding: finding %d names two locations (%s, %s); split it, one location each\n", nfound, parts[1], parts[2] > "/dev/stderr"
+        bad = 1; exit 2
+      }
+      typ = "none"
+      for (i = 1; i <= n; i++) {
+        line = lines[i]
+        if (match(line, /(^|[^A-Za-z])Type:/)) {
+          rest = substr(line, RSTART + RLENGTH)
+          gsub(/\*/, "", rest); rest = trim(rest)
+          if (rest != "") typ = rest
+          break
+        }
+      }
+      if (sev == "") sev = "none"
+      if (loc == "") { file = "-"; range = "0" }
+      else { p = index(loc, ":"); file = substr(loc, 1, p - 1); range = substr(loc, p + 1) }
+      text = trim(first); gsub(/\t/, " ", text); gsub(/\t/, " ", typ)
+      out = out sprintf("%s\t%s\t%s\t%s\t%s\n", sev, typ, file, range, text)
+      block = ""; opener = ""
+    }
+    BEGIN { inside = 0; seen_header = 0; block = ""; opener = ""; nfound = 0; content = 0; bad = 0; sentinel = 0; out = "" }
+    /^## Findings[ \t]*$/ && !seen_header { seen_header = 1; inside = 1; next }
+    /^## / { if (inside) { emit(); inside = 0 } next }
+    !inside { next }
+    {
+      line = $0
+      if (trim(line) == "") { emit(); next }
+      content++
+      if (content == 1 && trim(line) == "No findings.") { sentinel = 1 }
+      stripped = line; sub(/^\*\*/, "", stripped)
+      if (stripped ~ /^[0-9]+[.)]/) { emit(); block = line; opener = "item"; next }
+      if (line ~ /^###/) { emit(); block = line; opener = "item"; next }
+      if (line ~ /^[-*] / && opener != "item") { emit(); block = line; opener = "bullet"; next }
+      if (block == "") { block = line; opener = "text" } else { block = block "\n" line }
+    }
+    END {
+      if (bad) exit 2
+      if (!seen_header) {
+        print "finding: the answer has no '\''## Findings'\'' header; absence is not a clean review" > "/dev/stderr"; exit 2
+      }
+      if (inside) emit()
+      if (bad) exit 2
+      if (content == 0) {
+        print "finding: the '\''## Findings'\'' header has neither a finding nor '\''No findings.'\'' under it" > "/dev/stderr"; exit 2
+      }
+      # Printed only once every block has been read, so a refusal prints no
+      # half-read list that a caller could mistake for the findings.
+      printf "%s", out
+    }
+  '
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  parse)
+    [ $# -eq 0 ] || finding "$usage"
+    parse || exit $? ;;
+  '') finding "$usage" ;;
+  *) finding "$usage" ;;
+esac
+exit 0
