@@ -120,8 +120,8 @@ error is on the blocking side.
 ### Re-reviews that converge
 
 A fix pass does not send the whole branch again. The re-review reads from the
-commit that reviewer last saw to the new head, kept for the code review and
-the audit separately, and is shown every earlier
+commit the reviewers last saw to the new head, kept only once every phase of
+the gate was recorded, and is shown every earlier
 answer, fenced as data, with the rule: do not repeat a finding already listed,
 and report one that still stands as `Unresolved:` with its number. Each
 finding carries a `Type:` line, the kind of bug in a few words, and before

@@ -757,30 +757,16 @@ prompt_fake() {  # a reviewer that keeps its prompt and answers clean
   grep -qF 'Review the diff origin/main...HEAD of this branch against main' "$TEST_HOME/prompt"
 }
 
-@test "run as the audit, the block reads from the commit the audit last saw, not the code review's" {
-  gate_fakes 'prompt-reviewer'
-  prompt_fake
-  sha="$(cd "$GATE_REPO" && git rev-parse HEAD~1)"
-  echo "last_review=$sha" >> "$GATE_REPO/.git/ship-guard/feat"
-  export PHASE=security
-  run_review_block
-  [ "$status" -eq 0 ]
-  grep -qF 'Review the diff origin/main...HEAD of this branch against main' "$TEST_HOME/prompt"
-  echo "last_security=$sha" >> "$GATE_REPO/.git/ship-guard/feat"
-  run_review_block
-  [ "$status" -eq 0 ]
-  grep -qF "Review the diff $sha...HEAD of this branch against main" "$TEST_HOME/prompt"
-  unset PHASE
-}
-
-@test "a PHASE the guard does not know stops the block" {
-  gate_fakes 'prompt-reviewer'
-  prompt_fake
-  export PHASE=checks
-  run_review_block
-  unset PHASE
-  [ "$status" -eq 2 ]
-  [ ! -e "$TEST_HOME/prompt" ]
+# Step 7 reads the range step 6's block set, on both of its paths, so the one
+# kept commit has to be safe for the audit: the guard tests prove it is kept
+# only once every phase was recorded.
+@test "step 7 reads the range step 6 set, on the command line and on the agent path" {
+  seven="$(sed -n '/^## Step 7\./,/^## Step 8\./p' "$SHIP_MD")"
+  [[ "$seven" == *'run step 6'"'"'s block with'*'`$SECURITY_REVIEWER` in place of `$REVIEWER`'* ]]
+  agent="$(printf '%s' "$seven" | sed -n '/^- \*\*`agent:<name>`\*\*/,/^- \*\*Anything else/p')"
+  [[ "$agent" == *'`$RANGE` being the value step 6'"'"'s'*'block set'* ]]
+  ! printf '%s' "$seven" | grep -q 'PHASE'
+  ! grep -q 'last-review "' "$SHIP_MD"
 }
 
 @test "an answer the block refuses is not kept as a prior finding" {
