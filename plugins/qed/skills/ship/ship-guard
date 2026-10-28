@@ -11,7 +11,7 @@ set -u
 finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 die()     { printf 'ship-guard: %s\n' "$*" >&2; exit 1; }
 
-usage="usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | last-review [security] | attest | push-ok"
+usage="usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | last-review [review|security] | attest | push-ok"
 
 gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null)" \
   || finding "/ship guard must run inside a git repository"
@@ -259,16 +259,16 @@ case "$cmd" in
     printf 'fix pass %s of 3\n' "$n"
     ;;
 
-  # The commit the last fix pass kept for the code review, or with the word
-  # security for the audit, or nothing. Printed as stored: the caller checks
-  # its shape, because this file is untracked and anything running as this
+  # The commit the last fix pass kept for that phase, the code review when
+  # none is named, or nothing. Printed as stored: the caller checks its
+  # shape, because this file is untracked and anything running as this
   # account can write it.
   last-review)
     require_file
     case "$#:${1:-}" in
-      0:)         kv last_review ;;
-      1:security) kv last_security ;;
-      *)          finding "$usage" ;;
+      0: | 1:review) kv last_review ;;
+      1:security)    kv last_security ;;
+      *)             finding "$usage" ;;
     esac
     ;;
 

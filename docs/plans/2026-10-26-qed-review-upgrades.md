@@ -2,7 +2,7 @@
 
 **Where this stands:** approved 2026-10-27; Tasks 1 to 5, 7 and 8 done on branch feat/qed-review-upgrades, through the ship gate / next: Task 6, the operator's collection, in its own session / blocked on: nothing
 
-**Divergence (2026-10-28, from the gate's security review):** the guard keeps `last_security` beside `last_review`, and step 7 reads its range from the commit the audit last saw, since a fix pass before the first audit would otherwise scope that audit to the fix alone; the step 6 block records an answer only after `label` accepts it, so a refused answer is not sent back as a prior finding.
+**Divergence (2026-10-28, from the gate's security review):** the guard keeps `last_security` beside `last_review`, and step 7 runs the block with `PHASE=security` so its range starts at the commit the audit last saw, since a fix pass before the first audit would otherwise scope that audit to the fix alone; the step 6 block records an answer only after `label` accepts it, so a refused answer is not sent back as a prior finding.
 
 **Goal:** make the gate's reviewers measurable against real bugs, let a repository brief its reviewers from the base branch, stop pre-existing defects from blocking a branch, and make fix-pass re-reviews converge instead of repeating themselves.
 

@@ -757,28 +757,30 @@ prompt_fake() {  # a reviewer that keeps its prompt and answers clean
   grep -qF 'Review the diff origin/main...HEAD of this branch against main' "$TEST_HOME/prompt"
 }
 
-run_review_block_then() {  # $1 a command run after the block, in its shell
-  block="$(review_block)"
-  [ -n "$block" ] || { echo "step 6 carries no reviewer block"; return 1; }
-  cd "$GATE_REPO"
-  run env SHIP_ENV="$SKILL_DIR/ship-env" SHIP_DIR="$SKILL_DIR" SHIP_GUARD="$SKILL_DIR/ship-guard" BASE=main TMPDIR="$TEST_HOME/tmp" \
-    SHIP_AUTHOR=claude PATH="$TEST_HOME/fake:$PATH" bash -c "$block
-$1"
-}
-
-@test "the block leaves RANGE for the audit from the commit the audit last saw, not the code review's" {
+@test "run as the audit, the block reads from the commit the audit last saw, not the code review's" {
   gate_fakes 'prompt-reviewer'
   prompt_fake
   sha="$(cd "$GATE_REPO" && git rev-parse HEAD~1)"
   echo "last_review=$sha" >> "$GATE_REPO/.git/ship-guard/feat"
-  run_review_block_then 'echo "RANGE=$RANGE"'
+  export PHASE=security
+  run_review_block
+  [ "$status" -eq 0 ]
+  grep -qF 'Review the diff origin/main...HEAD of this branch against main' "$TEST_HOME/prompt"
+  echo "last_security=$sha" >> "$GATE_REPO/.git/ship-guard/feat"
+  run_review_block
   [ "$status" -eq 0 ]
   grep -qF "Review the diff $sha...HEAD of this branch against main" "$TEST_HOME/prompt"
-  [ "${lines[${#lines[@]}-1]}" = "RANGE=origin/main...HEAD" ]
-  echo "last_security=$sha" >> "$GATE_REPO/.git/ship-guard/feat"
-  run_review_block_then 'echo "RANGE=$RANGE"'
-  [ "$status" -eq 0 ]
-  [ "${lines[${#lines[@]}-1]}" = "RANGE=$sha...HEAD" ]
+  unset PHASE
+}
+
+@test "a PHASE the guard does not know stops the block" {
+  gate_fakes 'prompt-reviewer'
+  prompt_fake
+  export PHASE=checks
+  run_review_block
+  unset PHASE
+  [ "$status" -eq 2 ]
+  [ ! -e "$TEST_HOME/prompt" ]
 }
 
 @test "an answer the block refuses is not kept as a prior finding" {

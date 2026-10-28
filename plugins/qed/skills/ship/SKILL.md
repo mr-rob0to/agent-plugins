@@ -285,7 +285,7 @@ GUIDE="$("$SHIP_ENV" review-guide "$BASE")" || exit 2
 CRITERIA="${CRITERIA:-There are no stated acceptance criteria.}"
 PRIOR="$("$SHIP_DIR/ship-findings" prior)" || exit 2
 RANGE="origin/$BASE...HEAD"
-LAST="$("$SHIP_GUARD" last-review)" || exit 2
+LAST="$("$SHIP_GUARD" last-review "${PHASE:-review}")" || exit 2
 if [ "${#LAST}" -eq 40 ]; then
   case "$LAST" in *[!0-9a-f]*) ;; *) RANGE="$LAST...HEAD" ;; esac
 fi
@@ -308,13 +308,6 @@ LABELLED=$?
 [ "$LABELLED" -ne 0 ] || "$SHIP_DIR/ship-findings" record < "$ANSWER" || LABELLED=2
 rm -rf "$RUN_DIR"
 [ "$LABELLED" -eq 0 ] || exit 2
-# Step 7 reads $RANGE too, from the commit the audit last saw, which need
-# not be the one the code review saw.
-RANGE="origin/$BASE...HEAD"
-LAST="$("$SHIP_GUARD" last-review security)" || exit 2
-if [ "${#LAST}" -eq 40 ]; then
-  case "$LAST" in *[!0-9a-f]*) ;; *) RANGE="$LAST...HEAD" ;; esac
-fi
 ```
 
 `$REVIEWER` is deliberately unquoted: the value is a command line and its words
@@ -414,8 +407,9 @@ and the commit the audit saw as `last_security`, because the two differ: a
 code review that finds something is fixed before the first audit runs. The
 block trusts a kept commit only when it is 40 hex characters, because the
 guard file is untracked and anything running as this account can write it;
-anything else leaves the range at the whole branch, which covers more. At its
-end the block sets `RANGE` again from `last_security`, for step 7. The prompt also
+anything else leaves the range at the whole branch, which covers more. Which
+commit the block asks for is `PHASE`: unset or `review` here, `security` when
+step 7 runs the block. The prompt also
 carries every earlier answer, fenced as `prior-findings`, and asks the reviewer
 not to repeat one and to report a finding that still stands as `Unresolved:`
 with its number. That is how three passes converge instead of saying the same
@@ -528,8 +522,9 @@ The value has two shapes, and the gate handles both:
   `usage: in session total`, never counts of its own.
 - **Anything else** is a command line, and the audit prompt below is appended to
   it as one argument, exactly as step 6 does: run step 6's block with
-  `$SECURITY_REVIEWER` in place of `$REVIEWER` and this prompt in place of that
-  one, so the answer and its `usage:` line print the same way.
+  `PHASE=security` set, `$SECURITY_REVIEWER` in place of `$REVIEWER` and this
+  prompt in place of that one, so the answer and its `usage:` line print the
+  same way and the range is the audit's own.
 
 On a host that cannot dispatch agents, an `agent:` value stops the gate here:
 
@@ -579,11 +574,11 @@ have to guess:
 
 `$PRIOR`, `$CRITERIA` and `$GUIDE` are the values step 6's block set, so
 this prompt carries the earlier answers the same way and sends the same
-criteria and the same guide, fenced the same way. `$RANGE` is the value the
-block set last, at its end: the whole branch, or from the commit this audit
-last saw to `HEAD`, which is not where the code review read from. A fix pass
-before the first audit leaves the audit the whole branch. The block's
-`record` call keeps this answer too, so a re-audit sees it.
+criteria and the same guide, fenced the same way. `$RANGE` is not: with
+`PHASE=security` the block asks the guard for the commit this audit last saw,
+not the one the code review read from, so a fix pass before the first audit
+leaves the audit the whole branch. The block's `record` call keeps this
+answer too, so a re-audit sees it.
 
 **Read this answer fail-closed too.** Both headers must be there. A missing
 header, or a header with neither a finding nor the sentinel under it, is a stop.
