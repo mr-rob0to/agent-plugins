@@ -210,9 +210,11 @@ EOF
   run --separate-stderr parse <<'EOF'
 ## Findings
 1. High: (`app/api/users/[id]/route.ts:12`) trusts the id.
+2. High: `app/api/users/[id]/route.ts`:14 trusts the body.
 EOF
   [ "$status" -eq 0 ]
   [ "${lines[0]}" = "$(printf 'High\tnone\tapp/api/users/[id]/route.ts\t12\t1. High: (`app/api/users/[id]/route.ts:12`) trusts the id.')" ]
+  [ "${lines[1]}" = "$(printf 'High\tnone\tapp/api/users/[id]/route.ts\t14\t2. High: `app/api/users/[id]/route.ts`:14 trusts the body.')" ]
 }
 
 @test "an unknown verb is a finding naming the verbs there are" {

@@ -29,8 +29,10 @@ usage="usage: ship-findings parse | label <base> | record [<pass>] | prior"
 # Medium or Low on the block's first line, or in the whole block when the first
 # line has none; the location is the first file:line token read the same way,
 # a token being a path holding "/" or "." followed by ":digits" or
-# ":digits-digits", with the backticks, brackets and stars around it stripped
-# and the ones inside it kept, since a route file can be named "[id]". Two different
+# ":digits-digits", with every backtick and star removed and the brackets
+# around it stripped, the ones inside it kept, since a route file can be named
+# "[id]" and a reviewer can write the file in backticks and the line outside
+# them. Two different
 # severities, or two different locations, on the line or lines that supply them
 # is a refusal and never a guess: the gate cannot label a finding it cannot
 # place. The type is the text after a "Type:" label anywhere in the block.
@@ -42,8 +44,9 @@ parse() {
   awk '
     function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
     function clean_token(t) {
-      sub(/^[`(\[*]+/, "", t)
-      sub(/[`)\]*,;.:]+$/, "", t)
+      gsub(/[`*]/, "", t)
+      sub(/^[(\[]+/, "", t)
+      sub(/[)\],;.:]+$/, "", t)
       return t
     }
     # The severity words of a line, in order, as one space-separated string of
