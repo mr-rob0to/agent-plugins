@@ -428,8 +428,9 @@ then, before fixing, look through the branch diff for other instances of the
 same kind of bug, the one the finding's `Type:` names, and fix them in the
 same pass: a reviewer that found one missing check found the pattern, not the
 only place it bites. Make the fix, then record every phase again from step 4
-onward: the checks, this review, and the security pass. A fix pass clears all three because a fix
-is code, and the commit going out is then code that none of the three has seen.
+onward: the checks, this review, and the security pass. A fix pass clears all
+three because a fix is code, and the commit going out is then code that none
+of the three has seen.
 
 Recording `review` again asserts one of two things, and the pull request body
 says which: the reviewer re-ran scoped to the new commits, because a Critical
@@ -489,9 +490,12 @@ is, and what qualified it, are in the bundled note,
 `"$SHIP_DIR/config/security-reviewer"`, not in this file. Running some other
 reviewer instead is the silent degradation this whole step exists to remove.
 
-**If the reviewer's model is refused with an HTTP 400**, take the one fallback
-stated in the bundled note, run the same audit once more, and say in the pull
-request which reviewer actually ran. Read the note at
+**If a `codex exec` line's model is refused with an HTTP 400**, take the one
+fallback stated in the bundled note, run the same audit once more, and say in
+the pull request which reviewer actually ran. That retry is for a codex line
+only: a claude line that fails stops the step, because the fallback named in
+the note is a Sol and a Sol is not a substitute for the line that was chosen.
+Read the note at
 `"$SHIP_DIR/config/security-reviewer"` and at no other path: the gate runs with
 its working directory inside the repository under review, so a bare relative
 path to that note names that repository's own copy, which the branch being
@@ -897,9 +901,9 @@ All of these mean: go back and do the step properly.
 - **Step 7 when the value is `agent:<name>`**, which only a file the operator wrote produces:
   dispatch that agent. Only Claude Code can; any other harness stops with step 7's finding. If
   the host has no agent of that name, stop and say so rather than running a different reviewer.
-- **Step 7's one fallback** is an HTTP 400 from the reviewer's model, retried once with the
-  model named by the bundled note at `"$SHIP_DIR/config/security-reviewer"`, and named in the
-  pull request. Anything else stops the step. The bundled file, because the operator's own copy
+- **Step 7's one fallback** is an HTTP 400 from a `codex exec` line's model, retried once with
+  the model named by the bundled note at `"$SHIP_DIR/config/security-reviewer"`, and named in
+  the pull request. A claude line gets no retry. Anything else stops the step. The bundled file, because the operator's own copy
   need not carry the note; anchored to `$SHIP_DIR`, because a bare path would be the reviewed
   repository's own file.
 - **`ship-attest-check verify <head>`** reads a pull request body on stdin and agrees only when

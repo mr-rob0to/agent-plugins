@@ -53,9 +53,13 @@ Out of the box both reviewers are set to `auto`:
   plan mode, which can read the code but not change it, and any other branch
   goes to `codex`. With only one of them installed, that one reviews, and the
   pull request says when it is the author's own vendor.
-- **Security review:** `codex` only, on Sol, the model this gate was tested
-  against. Without `codex`, a branch that needs a security review stops rather
-  than running a reviewer nobody has tested.
+- **Security review:** Claude Code on Opus in plan mode, whoever wrote the
+  branch; the pull request says so when the branch is Claude's own. Opus found
+  both planted defects in `tests/fixtures/security-review` and invented nothing
+  against the clean file. Codex on Sol passed the same fixtures and is the
+  written alternative: put its line in your own `security-reviewer` file (the
+  bundled note shows it). Without `claude`, a branch that needs a security
+  review stops rather than running a reviewer nobody has tested.
 
 The code review always uses the newest version of its model. Claude Code is
 given `fable`, which it resolves to the newest Fable. Codex has no such name, so

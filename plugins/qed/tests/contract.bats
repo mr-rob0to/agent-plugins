@@ -25,8 +25,19 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   done
 }
 
-@test "the security reviewer's note names the model the gate falls back to" {
-  grep -qF 'gpt-5.6-terra' "$SKILL_DIR/config/security-reviewer"
+@test "the security reviewer's note names the codex fallback, what qualified Opus, and the written Sol line" {
+  note="$(tr '\n' ' ' < "$SKILL_DIR/config/security-reviewer" | sed 's/ # / /g')"
+  [[ "$note" == *'gpt-5.6-terra when gpt-5.6-sol was the one refused'* ]]
+  [[ "$note" == *'That retry is for a codex line only; a claude line that fails stops the step.'* ]]
+  [[ "$note" == *'What qualified Opus: on 2026-10-26'* ]]
+  [[ "$note" == *'both planted Critical defects'*'one Low against the clean counterpart'* ]]
+  [[ "$note" == *'resolved by Claude Code to the newest Opus'* ]]
+  [[ "$note" == *'tests/review-eval/scores.md'* ]]
+  [[ "$note" == *'codex exec -m gpt-5.6-sol --sandbox read-only -c project_doc_max_bytes=0'* ]]
+  # And the skill's own fallback prose says the same, without naming a model.
+  seven="$(unwrapped '/^## Step 7\./,/^## Step 8\./p' "$SHIP_MD")"
+  [[ "$seven" == *'If a `codex exec` line'"'"'s model is refused with an HTTP 400'* ]]
+  [[ "$seven" == *'a claude line that fails stops the step'* ]]
 }
 
 # Claude Code refuses to add a catalog named agent-skills from anywhere but
@@ -762,24 +773,24 @@ prompt_fake() {  # a reviewer that keeps its prompt and answers clean
 @test "both prompts ask for one location and a Type line per finding, and nothing else under the header" {
   prompt="$(sed -n '/^## Step 6\./,/^## Step 7\./p' "$SHIP_MD" | grep -F '$REVIEWER "')"
   [[ "$prompt" == *"exactly one precise file:line location"* ]]
+  [[ "$prompt" == *"states its severity, one of Critical, High, Medium or Low, on its first line"* ]]
   [[ "$prompt" == *"'Type: <kind of bug in a few words>'"* ]]
   [[ "$prompt" == *"nothing else under that header"* ]]
   [[ "$prompt" == *'$RANGE'* ]]
   [[ "$prompt" == *'$PRIOR'* ]]
   seven="$(sed -n '/^## Step 7\./,/^## Step 8\./p' "$SHIP_MD" | grep '^>' | tr '\n' ' ')"
   [[ "$seven" == *"exactly one precise file:line location"* ]]
+  [[ "$seven" == *"stating > its severity, one of Critical, High, Medium or Low, on its first line"* ]]
   [[ "$seven" == *'Type: <kind of bug in a few > words>'* ]]
   [[ "$seven" == *'$RANGE'* ]]
   [[ "$seven" == *'$PRIOR'* ]]
   [[ "$seven" == *"for one that still > stands write \`Unresolved:\` and its number"* ]]
 }
-  [[ "$prompt" == *"states its severity, one of Critical, High, Medium or Low, on its first line"* ]]
 
 @test "a finding without a Type line is not a stop, and the fix pass hunts the same kind of bug" {
   six="$(sed -n '/^## Step 6\./,/^## Step 7\./p' "$SHIP_MD" | tr '\n' ' ' | tr -s ' ')"
   [[ "$six" == *'A finding that comes back without one is not a stop'* ]]
   [[ "$six" == *'look through the branch diff for other instances of the same kind of bug'* ]]
-  [[ "$seven" == *"stating > its severity, one of Critical, High, Medium or Low, on its first line"* ]]
   [[ "$six" == *'fix them in the same pass'* ]]
   [[ "$six" == *'Three fix passes per gate.'* ]]
   table="$(sed -n '/^## Stop and report/,/^## Red flags/p' "$SHIP_MD" | grep -i 'type:' || true)"

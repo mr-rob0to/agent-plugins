@@ -90,6 +90,7 @@ on_host() {  # $1 copied folder, $2.. arguments
 # asserts it cannot drift from the one ship-env prints.
 claude_line='claude -p --safe-mode --disallowedTools WebFetch,WebSearch --model fable --effort high --permission-mode plan'
 codex_line='codex exec -m gpt-9.1-sol --sandbox read-only -c project_doc_max_bytes=0'
+opus_line='claude -p --safe-mode --disallowedTools WebFetch,WebSearch --model opus --effort high --permission-mode plan'
 
 # A copy whose bundled defaults are auto, so the probe is reached the way a
 # fresh install reaches it.
@@ -234,14 +235,13 @@ auto_copy() {  # prints the copied folder
   cp "$SKILL_DIR/ship-env" "$c/ship-env"
   cp -R "$SKILL_DIR/config" "$c/config"
   [ ! -d "$HOME/.config/ship" ]
-  host codex user-agent
+  host codex claude user-agent
   run --separate-stderr on_host "$c" reviewer
   [ "$status" -eq 0 ]
   [ "$output" = "$codex_line" ]
-  # The fake catalog lists no Sol the shipped script counts as tested.
   run --separate-stderr on_host "$c" security-reviewer
   [ "$status" -eq 0 ]
-  [ "$output" = "codex exec -m gpt-5.6-sol --sandbox read-only -c project_doc_max_bytes=0" ]
+  [ "$output" = "$opus_line" ]
 }
 
 @test "auto picks codex for the code review when codex is on this host" {
@@ -333,18 +333,47 @@ auto_copy() {  # prints the copied folder
   [ "$stderr" = "finding: SHIP_AUTHOR is 'gemini'; set it to claude or codex, or leave it unset" ]
 }
 
-# Only Sol has been qualified for the security pass, so the author cannot move
-# it. What changes is that a Codex branch is told its auditor is its own vendor.
-@test "the author never moves the security pass, and a Codex branch is told" {
+# The security pass goes to Claude on Opus whoever wrote the branch, so the
+# author cannot move it. What changes is that a Claude branch is told its
+# auditor is its own vendor.
+@test "the author never moves the security pass, and a Claude branch is told" {
   c="$(auto_copy)"
   host codex claude
-  AUTHOR_ENV="SHIP_AUTHOR=codex" run --separate-stderr on_host "$c" security-reviewer
-  [ "$status" -eq 0 ]
-  [ "$output" = "$codex_line" ]
-  [ "$stderr" = "note: the security reviewer is codex, the same vendor that wrote this branch; say so in the pull request" ]
   AUTHOR_ENV="SHIP_AUTHOR=claude" run --separate-stderr on_host "$c" security-reviewer
   [ "$status" -eq 0 ]
-  [ "$output" = "$codex_line" ]
+  [ "$output" = "$opus_line" ]
+  [ "$stderr" = "note: the security reviewer is claude, the same vendor that wrote this branch; say so in the pull request" ]
+  AUTHOR_ENV="SHIP_AUTHOR=codex" run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = "$opus_line" ]
+  [ -z "$stderr" ]
+}
+
+@test "auto picks Claude on Opus for the security pass, and a host without claude stops naming the file" {
+  c="$(auto_copy)"
+  host codex claude
+  run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = "$opus_line" ]
+  [ -z "$stderr" ]
+  host codex
+  rm -f "$STUB/claude"
+  run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [ "$stderr" = "finding: no security reviewer on this host: claude is not on PATH; put a command line in $HOME/.config/ship/security-reviewer" ]
+}
+
+# Codex Sol is the written alternative: the line comes back as written, with
+# no probe, no note and no model lookup.
+@test "a written codex line for the security pass is returned untouched" {
+  c="$(auto_copy)"
+  o="$(ovr)"
+  printf 'codex exec -m gpt-5.6-sol --sandbox read-only -c project_doc_max_bytes=0\n' > "$o/security-reviewer"
+  host claude
+  AUTHOR_ENV="SHIP_AUTHOR=claude" run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = "codex exec -m gpt-5.6-sol --sandbox read-only -c project_doc_max_bytes=0" ]
   [ -z "$stderr" ]
 }
 
@@ -359,17 +388,17 @@ auto_copy() {  # prints the copied folder
   [ -z "$stderr" ]
 }
 
-# The security pass is qualified work, and what was qualified is Codex Sol
+# The security pass is qualified work, and what was qualified is Claude on Opus
 # against the fixtures under tests/fixtures/security-review. An agent the
 # operator happens to have defined has not been qualified for this, so it is not
-# probed: automatic means Sol, and a preference is stated in the override file
+# probed: automatic means Opus, and a preference is stated in the override file
 # or not at all.
-@test "auto picks Codex Sol for the security pass even where an agent is defined" {
+@test "auto picks Claude on Opus for the security pass even where an agent is defined" {
   c="$(auto_copy)"
   host codex claude user-agent
   run --separate-stderr on_host "$c" security-reviewer
   [ "$status" -eq 0 ]
-  [ "$output" = "$codex_line" ]
+  [ "$output" = "$opus_line" ]
   [ "$output" != "agent:security-reviewer" ]
   [ "$output" != "$claude_line" ]
   # The definition really is where a probe for agents would read it, so this is
@@ -387,7 +416,7 @@ auto_copy() {  # prints the copied folder
   host codex claude project-agent
   run --separate-stderr on_host "$c" security-reviewer
   [ "$status" -eq 0 ]
-  [ "$output" = "$codex_line" ]
+  [ "$output" = "$opus_line" ]
   [ "$output" != "agent:security-reviewer" ]
   # The file really is where the gate would run, so the test is asking the
   # question it means to ask and not passing because nothing was written.
@@ -410,13 +439,13 @@ auto_copy() {  # prints the copied folder
 
 # The probe never returns an agent, so the worst a repository defining one can
 # do to an automatic run is nothing. Both definitions present, and the answer is
-# Sol.
+# Opus.
 @test "the probe cannot be made to return an agent by defining one" {
   c="$(auto_copy)"
   host codex claude user-agent project-agent
   run --separate-stderr on_host "$c" security-reviewer
   [ "$status" -eq 0 ]
-  [ "$output" = "$codex_line" ]
+  [ "$output" = "$opus_line" ]
   [ -f "$HOME/.claude/agents/security-reviewer.md" ]
   [ -f "$PROJECT/.claude/agents/security-reviewer.md" ]
 }
@@ -495,27 +524,16 @@ auto_copy() {  # prints the copied folder
   esac
 }
 
-@test "auto picks Codex Sol for the security pass, never the claude line" {
+@test "auto picks Opus for the security pass, never the codex line or the fable line" {
   c="$(auto_copy)"
   host codex claude
   run --separate-stderr on_host "$c" security-reviewer
   [ "$status" -eq 0 ]
-  [ "$output" = "$codex_line" ]
-  # claude is on this host and is not the answer. There is no automatic Claude
-  # security reviewer: what was qualified is Sol.
+  [ "$output" = "$opus_line" ]
+  # codex is on this host and is not the answer any more: Sol is the written
+  # alternative. And the code-review line on fable is not the security line.
+  [ "$output" != "$codex_line" ]
   [ "$output" != "$claude_line" ]
-}
-
-# A host without codex has nothing qualified to run, so it stops rather than
-# quietly running something else. claude is deliberately present: falling back
-# to it is exactly what must not happen.
-@test "auto with no codex on the host stops the security pass and names the file" {
-  c="$(auto_copy)"
-  host claude user-agent
-  run --separate-stderr on_host "$c" security-reviewer
-  [ "$status" -eq 2 ]
-  [ -z "$output" ]
-  [ "$stderr" = "finding: no security reviewer on this host: codex is not on PATH; put a command line in $HOME/.config/ship/security-reviewer" ]
 }
 
 # The probe exists to answer where nobody has said what they want. A stated
@@ -891,7 +909,7 @@ events() {  # $@ event lines; written where the usage tests read them
 @test "the codex reviewer runs the listed Sol codex ranks first" {
   c="$(auto_copy)"
   host codex
-  run --separate-stderr on_host "$c" security-reviewer
+  run --separate-stderr on_host "$c" reviewer
   [ "$status" -eq 0 ]
   [ "$output" = "codex exec -m gpt-9.1-sol --sandbox read-only -c project_doc_max_bytes=0" ]
   [ -z "$stderr" ]
@@ -919,7 +937,7 @@ events() {  # $@ event lines; written where the usage tests read them
   c="$(auto_copy)"
   host codex
   catalog '{"models":[{"slug":"gpt-9-sol; touch pwned #-sol","visibility":"list","priority":1},{"slug":"gpt-9-sol\nx-sol","visibility":"list","priority":2},{"slug":"gpt-9.5-sol\n","visibility":"list","priority":2},{"slug":"gpt-8-sol","visibility":"list","priority":3}]}'
-  run --separate-stderr on_host "$c" security-reviewer
+  run --separate-stderr on_host "$c" reviewer
   [ "$status" -eq 0 ]
   [ "$output" = "codex exec -m gpt-8-sol --sandbox read-only -c project_doc_max_bytes=0" ]
 }
@@ -932,36 +950,13 @@ events() {  # $@ event lines; written where the usage tests read them
   [[ "$output" == *" --model fable "* ]]
 }
 
-# A newer Sol is not a better security reviewer by default: gpt-6.1-sol missed
-# both planted defects in the fixtures that gpt-5.6-sol found. So the security
-# pass takes the newest listed Sol that has passed them, while the code review
-# takes the newest listed Sol.
-@test "the security pass takes the newest tested Sol, the code review the newest Sol" {
-  TESTED_SOLS='gpt-8-sol' c="$(auto_copy)"
-  host codex
-  run --separate-stderr on_host "$c" security-reviewer
-  [ "$status" -eq 0 ]
-  [ "$output" = "codex exec -m gpt-8-sol --sandbox read-only -c project_doc_max_bytes=0" ]
-  [ -z "$stderr" ]
-  run --separate-stderr on_host "$c" reviewer
-  [ "$status" -eq 0 ]
-  [ "$output" = "codex exec -m gpt-9.1-sol --sandbox read-only -c project_doc_max_bytes=0" ]
-}
-
-@test "a catalog with no tested Sol puts the security pass on gpt-5.6-sol and says so" {
-  TESTED_SOLS='gpt-5.6-sol' c="$(auto_copy)"
-  host codex
-  run --separate-stderr on_host "$c" security-reviewer
-  [ "$status" -eq 0 ]
-  [ "$output" = "codex exec -m gpt-5.6-sol --sandbox read-only -c project_doc_max_bytes=0" ]
-  [ "$stderr" = "note: codex listed no Sol that has passed the security fixtures; the security reviewer falls back to gpt-5.6-sol" ]
-}
-
-# The shipped list holds only versions that passed, and the bundled note says
-# the same, so the two cannot drift apart unnoticed.
+# The security pass no longer chooses a Sol, so the list of Sols that passed
+# the fixtures is read by nothing at run time. It stays as the record of which
+# Sol an operator can write with that evidence behind it, and the bundled note
+# says the same, so the two cannot drift apart unnoticed.
 @test "the shipped tested Sols are gpt-5.6-sol alone, and the note agrees" {
   [ "$(grep '^tested_sols=' "$SKILL_DIR/ship-env")" = "tested_sols='gpt-5.6-sol'" ]
-  tr '\n' ' ' < "$SKILL_DIR/config/security-reviewer" | grep -qF 'Versions that have passed: # gpt-5.6-sol.'
+  tr '\n' ' ' < "$SKILL_DIR/config/security-reviewer" | grep -qF 'Versions that have passed, which is the list tested_sols in ship-env: # gpt-5.6-sol.'
 }
 
 # ---- review-guide ------------------------------------------------------------
