@@ -17,11 +17,13 @@ usage="usage: ship-findings parse | label <base> | record [<pass>] | prior"
 # under a literal "## Findings" header up to the next "## " header, so a
 # step 7 answer's "## Checked clean" list never reads as findings.
 #
-# The region is cut into blocks. A blank line ends one. A numbered item, a
-# "###" heading, and a bullet at the left margin start one, except that a
-# bullet directly under a numbered item or a heading is that finding's detail:
-# Claude writes "**1. High: ...**" and puts the attack and the fix in bullets
-# under it, and Codex writes one bullet per finding.
+# The region is cut into blocks. A numbered item, a "###" heading, and a bullet
+# at the left margin start one. A blank line ends a bullet's block or a plain
+# paragraph's, but not a numbered item's or a heading's: those announce a
+# finding, and what follows up to the next item or heading is its body, blank
+# lines included. Claude writes "**1. High: ...**" and puts the attack and the
+# fix in bullets under it; Codex writes "### Critical: ..." with a blank line
+# before the location and the type, or one bullet per finding.
 #
 # From each block: the severity is the first of Critical, High, Important,
 # Medium or Low on the block's first line, or in the whole block when the first
@@ -58,7 +60,7 @@ parse() {
     }
     # The locations of a line, in order, distinct.
     function locations(line,   n, w, i, t, out, seen) {
-      n = split(line, w, /[ \t]+/)
+      n = split(line, w, /[ \t\n]+/)
       out = ""; delete seen
       for (i = 1; i <= n; i++) {
         t = clean_token(w[i])
@@ -109,7 +111,7 @@ parse() {
     !inside { next }
     {
       line = $0
-      if (trim(line) == "") { emit(); next }
+      if (trim(line) == "") { if (opener != "item") emit(); next }
       content++
       if (content == 1 && trim(line) == "No findings.") { sentinel = 1 }
       stripped = line; sub(/^\*\*/, "", stripped)

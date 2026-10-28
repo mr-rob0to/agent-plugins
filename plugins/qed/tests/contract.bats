@@ -773,12 +773,14 @@ prompt_fake() {  # a reviewer that keeps its prompt and answers clean
   [[ "$seven" == *'$PRIOR'* ]]
   [[ "$seven" == *"for one that still > stands write \`Unresolved:\` and its number"* ]]
 }
+  [[ "$prompt" == *"states its severity, one of Critical, High, Medium or Low, on its first line"* ]]
 
 @test "a finding without a Type line is not a stop, and the fix pass hunts the same kind of bug" {
   six="$(sed -n '/^## Step 6\./,/^## Step 7\./p' "$SHIP_MD" | tr '\n' ' ' | tr -s ' ')"
   [[ "$six" == *'A finding that comes back without one is not a stop'* ]]
   [[ "$six" == *'look through the branch diff for other instances of the same kind of bug'* ]]
   [[ "$six" == *'fix them in the same pass'* ]]
+  [[ "$seven" == *"stating > its severity, one of Critical, High, Medium or Low, on its first line"* ]]
   [[ "$six" == *'Three fix passes per gate.'* ]]
   table="$(sed -n '/^## Stop and report/,/^## Red flags/p' "$SHIP_MD" | grep -i 'type:' || true)"
   [ -z "$table" ]

@@ -45,6 +45,35 @@ EOF
   [ "${lines[1]}" = "$(printf 'Medium\tnone\tarchive.sh\t17\t**2. Medium: fixed extraction directory (`archive.sh:17`)**')" ]
 }
 
+@test "parse keeps a heading's body with it across blank lines, as Codex writes it" {
+  run --separate-stderr parse <<'EOF'
+## Findings
+
+### Critical: Archive name permits command execution
+
+Location: `archive.sh:17`
+Type: Shell command injection
+
+A caller-controlled archive name is inserted into eval.
+
+### Critical: Archive name escapes the archive directory
+
+Location: `archive.sh:24`
+Type: Directory traversal
+
+A caller can use ../ segments to read a file outside the directory.
+
+## Areas With No Findings
+
+No additional findings.
+EOF
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
+  [ "${#lines[@]}" -eq 2 ]
+  [ "${lines[0]}" = "$(printf 'Critical\tShell command injection\tarchive.sh\t17\t### Critical: Archive name permits command execution')" ]
+  [ "${lines[1]}" = "$(printf 'Critical\tDirectory traversal\tarchive.sh\t24\t### Critical: Archive name escapes the archive directory')" ]
+}
+
 @test "parse splits numbered items that have no blank line between them" {
   run --separate-stderr parse <<'EOF'
 ## Findings
