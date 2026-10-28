@@ -11,7 +11,7 @@ set -u
 finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 die()     { printf 'ship-guard: %s\n' "$*" >&2; exit 1; }
 
-usage="usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | attest | push-ok"
+usage="usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | last-review | attest | push-ok"
 
 gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null)" \
   || finding "/ship guard must run inside a git repository"
@@ -188,6 +188,9 @@ case "$cmd" in
     { echo "version=2"; echo "branch=$branch"; echo "fix_passes=0"
       echo "review_mode=$want"; echo "review_reason=$reason"; } > "$state" \
       || die "cannot write $state"
+    # A fresh gate has no earlier findings: the answers ship-findings kept for
+    # this branch belong to the gate that was just closed.
+    rm -f "$state.findings"
     ;;
 
   record)
@@ -230,6 +233,13 @@ case "$cmd" in
     [ "$n" -lt 3 ] || finding "three fix passes already; revert to the minimal fix and stop"
     n=$((n + 1))
     put fix_passes "$n"
+    # The commit the reviewer read is about to be dropped with the phase, and
+    # the re-review wants exactly that commit as the start of its range. So it
+    # is kept under its own key, which attest and push-ok never read. With no
+    # review recorded there is nothing to keep, and an older value stays: a
+    # range that starts earlier covers more, which is the safe direction.
+    last="$(kv review)"
+    [ -z "$last" ] || put last_review "$last"
     # Every phase, including a fix that only answers the security audit: the fix
     # is code, so the commit going out is code no reviewer has read yet. Keeping
     # the code review across a security fix left that round unable to push at
@@ -241,6 +251,15 @@ case "$cmd" in
     # shellcheck disable=SC2046
     drop $(phases)
     printf 'fix pass %s of 3\n' "$n"
+    ;;
+
+  # The commit the last fix pass kept, or nothing. Printed as stored: the
+  # caller checks its shape, because this file is untracked and anything
+  # running as this account can write it.
+  last-review)
+    [ $# -eq 0 ] || finding "$usage"
+    require_file
+    kv last_review
     ;;
 
   # The attestation is built here because this file's format has one owner.

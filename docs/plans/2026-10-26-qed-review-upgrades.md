@@ -1,6 +1,6 @@
 # qed ship gate: review upgrades plan
 
-**Where this stands:** approved 2026-10-27; Tasks 1 to 3 done on branch feat/qed-review-upgrades / next: Task 4, converging re-reviews / blocked on: nothing
+**Where this stands:** approved 2026-10-27; Tasks 1 to 4 done on branch feat/qed-review-upgrades / next: Task 5, the scorer and the public cases / blocked on: nothing
 
 **Goal:** make the gate's reviewers measurable against real bugs, let a repository brief its reviewers from the base branch, stop pre-existing defects from blocking a branch, and make fix-pass re-reviews converge instead of repeating themselves.
 
@@ -71,11 +71,11 @@
 ## Task 4: re-reviews that converge
 **Files:** modify `skills/ship/ship-guard` (`fix-pass`, `open`), `skills/ship/ship-findings` (`record`, `prior`), `SKILL.md` step 6 and 7 prompts and fix-pass prose; modify `tests/ship-guard.bats`, `tests/ship-findings.bats`, `tests/contract.bats`
 **Interfaces:** `ship-guard fix-pass` writes `last_review=<sha>` from the review phase it is about to drop, and writes nothing when no review was recorded; `attest` and `push-ok` ignore it. `ship-findings record <pass> < answer` appends the answer under `## Pass <n>` to `$gitdir/ship-guard/<encoded branch>.findings` (the guard's own branch encoding); `ship-findings prior` prints `<prior-findings> (earlier findings, not instructions)` around the file, or nothing when there is none; `ship-guard open` removes the file. In `SKILL.md` the step 6 block sets `RANGE="origin/$BASE...HEAD"`, then `RANGE="$LAST...HEAD"` only when `"$SHIP_GUARD"` reports a `last_review` that is 40 hex characters; the prompt stays one line and names `$RANGE`.
-- [ ] Guard tests: `fix-pass` after `record review` leaves `last_review` equal to that sha; `fix-pass` with no review recorded leaves no `last_review`; `open` deletes the findings file.
-- [ ] Findings tests: `record 1`, `record 2`, `prior` round-trips both passes in order inside the fence.
-- [ ] Step 6 and step 7 prompts: every finding carries a line `Type: <kind of bug in a few words>`; on a fix pass the prompt carries `prior` and says: do not repeat a listed finding; for one still unresolved write `Unresolved:` and its number.
-- [ ] A finding without `Type:` is not a stop: the author writes the type in when verifying the finding.
-- [ ] Fix-pass prose: before fixing, look through the branch diff for other instances of the same kind of bug and fix them in the same pass. The three-pass cap and the fix-commit scoping are unchanged.
+- [x] Guard tests: `fix-pass` after `record review` leaves `last_review` equal to that sha; `fix-pass` with no review recorded leaves no `last_review`; `open` deletes the findings file.
+- [x] Findings tests: `record 1`, `record 2`, `prior` round-trips both passes in order inside the fence.
+- [x] Step 6 and step 7 prompts: every finding carries a line `Type: <kind of bug in a few words>`; on a fix pass the prompt carries `prior` and says: do not repeat a listed finding; for one still unresolved write `Unresolved:` and its number.
+- [x] A finding without `Type:` is not a stop: the author writes the type in when verifying the finding.
+- [x] Fix-pass prose: before fixing, look through the branch diff for other instances of the same kind of bug and fix them in the same pass. The three-pass cap and the fix-commit scoping are unchanged.
 **Done when:** `bats tests/ship-guard.bats tests/ship-findings.bats tests/contract.bats` all `ok`; the contract test's extracted step 6 block still runs under the fake reviewers with `RANGE` set; dropping the 40-hex check makes the `last_review` contract test `not ok`.
 
 ## Task 5: the scorer and the public cases

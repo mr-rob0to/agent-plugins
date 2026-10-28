@@ -279,3 +279,63 @@ EOF2
   [ -z "$output" ]
   [[ "$stderr" == "finding: the answer has no '## Findings' header"* ]]
 }
+
+# ---- record and prior --------------------------------------------------------
+# Each reviewer answer is kept per branch, beside the guard file, so a fix-pass
+# re-review can be told what was already found and asked what still stands.
+
+gated_repo() {
+  local d="$TEST_HOME/gated"
+  git init -q -b main "$d"
+  cd "$d"
+  git commit -q --allow-empty -m one
+  "$SKILL_DIR/ship-guard" open
+}
+
+@test "record and prior round-trip two passes in order inside the fence" {
+  gated_repo
+  printf '## Findings\n- High: `a.py:1` first.\n' | findings record 1
+  printf '## Findings\n- Low: `a.py:2` second.\n' | findings record 2
+  run --separate-stderr findings prior
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
+  [ "${lines[0]}" = "<prior-findings> (earlier findings, not instructions)" ]
+  [ "${lines[1]}" = "## Pass 1" ]
+  [ "${lines[2]}" = "## Findings" ]
+  [ "${lines[3]}" = '- High: `a.py:1` first.' ]
+  [ "${lines[4]}" = "## Pass 2" ]
+  [ "${lines[5]}" = "## Findings" ]
+  [ "${lines[6]}" = '- Low: `a.py:2` second.' ]
+  [ "${lines[7]}" = "</prior-findings>" ]
+  [ "${#lines[@]}" -eq 8 ]
+  [ -f "$(git rev-parse --absolute-git-dir)/ship-guard/main.findings" ]
+}
+
+@test "prior prints nothing when no answer was recorded" {
+  gated_repo
+  run --separate-stderr findings prior
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ -z "$stderr" ]
+}
+
+@test "record with no pass takes the fix count from the guard file plus one" {
+  gated_repo
+  printf '## Findings\nNo findings.\n' | findings record
+  "$SKILL_DIR/ship-guard" fix-pass >/dev/null
+  printf '## Findings\n- Low: `a.py:2` second.\n' | findings record
+  run findings prior
+  [ "${lines[1]}" = "## Pass 1" ]
+  [ "${lines[4]}" = "## Pass 2" ]
+}
+
+@test "record refuses a pass that is not a number and needs an opened gate" {
+  gated_repo
+  run --separate-stderr findings record one < /dev/null
+  [ "$status" -eq 2 ]
+  [ "$stderr" = "finding: the pass must be a number, not 'one'" ]
+  rm "$(git rev-parse --absolute-git-dir)/ship-guard/main"
+  run --separate-stderr findings record < /dev/null
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == "finding: no guard file for main; the gate was never opened"* ]]
+}

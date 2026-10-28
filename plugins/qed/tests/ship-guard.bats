@@ -234,7 +234,7 @@ full_gate() {
   guard open
   run guard fix-pass security
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | attest | push-ok"* ]]
+  [[ "$output" == "finding: usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | last-review | attest | push-ok"* ]]
 }
 
 @test "the fourth fix pass is refused" {
@@ -296,7 +296,7 @@ full_gate() {
   cd "$(new_repo main)"
   run guard verify
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | attest | push-ok"* ]]
+  [[ "$output" == "finding: usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | last-review | attest | push-ok"* ]]
 }
 
 @test "push-ok refuses a guard file counting more fix passes than the gate allows" {

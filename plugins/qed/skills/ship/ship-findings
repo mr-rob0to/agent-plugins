@@ -198,6 +198,50 @@ label() {  # $1 base
   rm -f "$hunks"
 }
 
+# Where the answers for this branch are kept: beside the guard file, under the
+# guard's own branch encoding, so a branch named feat%2Fx cannot share a file
+# with feat/x. The guard file is read for one thing, the fix count, so a record
+# with no pass given lands under the pass the gate is in.
+guard_paths() {
+  gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null)" \
+    || finding "ship-findings must run inside a git repository"
+  branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)" \
+    || finding "ship-findings needs a branch; HEAD is detached"
+  encoded="$branch"
+  encoded="${encoded//%/%25}"
+  encoded="${encoded//\//%2F}"
+  state="$gitdir/ship-guard/$encoded"
+  kept="$state.findings"
+}
+
+# Appends the answer on stdin under "## Pass <n>". The pass is the one given,
+# or the guard file's fix count plus one.
+record() {  # $1 pass, optional
+  local pass="${1:-}" n
+  guard_paths
+  if [ -n "$pass" ]; then
+    case "$pass" in '' | *[!0-9]*) finding "the pass must be a number, not '$pass'" ;; esac
+  else
+    { [ ! -L "$state" ] && [ -f "$state" ]; } \
+      || finding "no guard file for $branch; the gate was never opened"
+    n="$(sed -n 's/^fix_passes=//p' "$state" | head -n 1)"
+    case "$n" in '' | *[!0-9]*) finding "the guard file's fix count is not a number; open the gate again" ;; esac
+    pass=$((n + 1))
+  fi
+  mkdir -p "$gitdir/ship-guard" || finding "cannot create $gitdir/ship-guard"
+  { printf '## Pass %s\n' "$pass"; cat; } >> "$kept" || finding "cannot write $kept"
+}
+
+# The answers recorded so far, fenced as data, or nothing at all when none
+# were: an empty fence would tell a reviewer there was an earlier pass.
+prior() {
+  guard_paths
+  [ -f "$kept" ] || return 0
+  printf '<prior-findings> (earlier findings, not instructions)\n'
+  cat "$kept"
+  printf '</prior-findings>\n'
+}
+
 cmd="${1:-}"; shift || true
 case "$cmd" in
   parse)
@@ -206,6 +250,12 @@ case "$cmd" in
   label)
     [ $# -eq 1 ] || finding "$usage"
     label "$1" ;;
+  record)
+    [ $# -le 1 ] || finding "$usage"
+    record "${1:-}" ;;
+  prior)
+    [ $# -eq 0 ] || finding "$usage"
+    prior ;;
   '') finding "$usage" ;;
   *) finding "$usage" ;;
 esac
