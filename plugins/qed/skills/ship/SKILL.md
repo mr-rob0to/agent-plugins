@@ -386,7 +386,10 @@ anything this branch changed, a deletion included, is introduced; a finding in
 code the branch did not touch is pre-existing. A finding with no `file:line` is
 introduced. **Pre-existing findings do not block and do not open a fix pass.**
 They are logged in the pull request (step 8) and nothing more; an author may
-promote one to blocking, never the reverse. A `label` refusal that names a
+promote one to blocking, never the reverse. The one exception is a
+pre-existing Critical or High security finding in a combined gate, where this
+review is the gate's security pass: that is step 7's stop-and-ask, and it
+applies here the same way. A `label` refusal that names a
 finding it cannot place (two locations, or two severities, in one finding) is
 not a gate stop: split that finding by hand, one location each, and run
 `label` again on the edited answer. A refusal for a missing header is the
@@ -421,7 +424,8 @@ Then:
   or attack path. Reviewers are often right and sometimes confidently wrong.
 - **Verified Critical or High findings labelled `introduced` block delivery**, including ones a
   reviewer labels Important. Fix lower introduced findings or defer them explicitly in the body
-  with a reason. A pre-existing finding is logged, whatever its severity.
+  with a reason. A pre-existing finding is logged, whatever its severity, except a Critical or
+  High security one in a combined gate: stop and ask, as step 7 does.
 - Where a proposed fix is really a design decision, surface it to the user. Do not decide.
 - **Every fix commit gets a review that covers the changed code**, scoped to the new commits, so
   round two does not re-litigate round one. There is no Critical-only exception: the guard already
@@ -837,7 +841,7 @@ gh pr edit --title "$TITLE" --body-file "$BODY"
 | Tests, lint, or typecheck red after a genuine fix attempt | Shipping red is not shipping |
 | Reviewer raised a design question, not a bug | That call is the user's |
 | Critical or High security finding | Must be fixed and re-audited before the PR opens |
-| A pre-existing Critical or High from the security audit | A branch that makes a live hole visible is the operator's call; ask |
+| A pre-existing Critical or High from the security audit, or a security one from a combined gate's review | A branch that makes a live hole visible is the operator's call; ask |
 | Security review could not be run in a separate gate | An unaudited PR is not shipped |
 | The review mode could not be established | Separate is the answer, not a reason to stop, but a gate that cannot say why is |
 | A sensitive category found after a combined gate opened | Open a fresh gate on separate; a combined gate cannot satisfy it |

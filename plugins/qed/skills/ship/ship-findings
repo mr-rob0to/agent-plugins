@@ -62,8 +62,23 @@ parse() {
       }
       return out
     }
-    # The locations of a line, in order, distinct.
-    function locations(line,   n, w, i, t, out, seen) {
+    # The locations of a line, in order, distinct. A backticked span is one
+    # token however many spaces it holds: a path can hold a space, and a
+    # reviewer writes such a path in backticks. The spaces inside a span are
+    # swapped for a byte no path holds, and emit puts them back once it has
+    # counted the locations, which it does by splitting on spaces.
+    function locations(line,   n, w, i, t, out, seen, s, a, b, rest, inner) {
+      s = ""
+      while ((a = index(line, "`")) > 0) {
+        s = s substr(line, 1, a - 1)
+        rest = substr(line, a + 1)
+        b = index(rest, "`")
+        if (b == 0) { s = s "`" rest; line = ""; break }
+        inner = substr(rest, 1, b - 1); gsub(/ /, SPACE, inner)
+        s = s "`" inner "`"
+        line = substr(rest, b + 1)
+      }
+      line = s line
       n = split(line, w, /[ \t\n]+/)
       out = ""; delete seen
       for (i = 1; i <= n; i++) {
@@ -91,6 +106,7 @@ parse() {
         printf "finding: finding %d names two locations (%s, %s); split it, one location each\n", nfound, parts[1], parts[2] > "/dev/stderr"
         bad = 1; exit 2
       }
+      gsub(SPACE, " ", loc)
       typ = "none"
       for (i = 1; i <= n; i++) {
         line = lines[i]
@@ -108,7 +124,7 @@ parse() {
       out = out sprintf("%s\t%s\t%s\t%s\t%s\n", sev, typ, file, range, text)
       block = ""; opener = ""
     }
-    BEGIN { inside = 0; seen_header = 0; block = ""; opener = ""; nfound = 0; content = 0; bad = 0; sentinel = 0; out = "" }
+    BEGIN { inside = 0; seen_header = 0; block = ""; opener = ""; nfound = 0; content = 0; bad = 0; sentinel = 0; out = ""; SPACE = sprintf("%c", 1) }
     /^## Findings[ \t]*$/ && !seen_header { seen_header = 1; inside = 1; next }
     /^## / { if (inside) { emit(); inside = 0 } next }
     !inside { next }
@@ -173,9 +189,11 @@ label() {  # $1 base
     BEGIN {
       n = 0; f = ""; old = ""
       while ((getline line < hunks) > 0) {
-        if (line ~ /^--- /) { old = line; sub(/^--- /, "", old); sub(/^a\//, "", old); continue }
+        # git ends a header name that holds a space with a tab, so that a
+        # reader can tell where the name stops; it is not part of the name.
+        if (line ~ /^--- /) { old = line; sub(/^--- /, "", old); sub(/\t$/, "", old); sub(/^a\//, "", old); continue }
         if (line ~ /^\+\+\+ /) {
-          f = line; sub(/^\+\+\+ /, "", f)
+          f = line; sub(/^\+\+\+ /, "", f); sub(/\t$/, "", f)
           if (f == "/dev/null") f = old; else sub(/^b\//, "", f)
           continue
         }

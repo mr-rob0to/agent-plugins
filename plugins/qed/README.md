@@ -112,8 +112,9 @@ A finding whose lines touch, or sit one line from, anything the branch changed
 is `introduced` and is the branch's to fix. A finding in code the branch did
 not touch is `pre-existing`: it is logged in the pull request as file, line,
 severity and type, and it blocks nothing. The one exception is a pre-existing
-Critical or High from the security audit, where the gate stops and asks,
-because a branch that makes a live hole visible is your call. A finding with
+Critical or High from the security audit, or a security one from the one
+review of a combined gate, where the gate stops and asks, because a branch
+that makes a live hole visible is your call. A finding with
 no file and line, or one the gate cannot place, counts as introduced: the
 error is on the blocking side.
 

@@ -660,6 +660,12 @@ run_review_block_unstated() {
   [[ "$table" == *'Critical or High from the security audit'* ]]
   seven="$(unwrapped '/^## Step 7\./,/^## Step 8\./p' "$SHIP_MD")"
   [[ "$seven" == *'pre-existing Critical or High from this audit: stop and ask'* ]]
+  # In a combined gate step 6 is the security pass, so the same stop applies
+  # there: a live hole in a public pull request is never a logged line.
+  [[ "$table" == *'or a security one from a combined gate'* ]]
+  six="$(unwrapped '/^## Step 6\./,/^## Step 7\./p' "$SHIP_MD")"
+  [[ "$six" == *'pre-existing Critical or High security finding in a combined gate'*'stop-and-ask'* ]]
+  [[ "$six" == *'except a Critical or High security one in a combined gate: stop and ask'* ]]
   eight="$(unwrapped '/^## Step 8\./,/^## Step 9\./p' "$SHIP_MD")"
   [[ "$eight" == *'file, line, severity and Type only'* ]]
   [[ "$eight" == *'never in the pull request body of a public repository'* ]]

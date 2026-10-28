@@ -217,6 +217,16 @@ EOF
   [ "${lines[1]}" = "$(printf 'High\tnone\tapp/api/users/[id]/route.ts\t14\t2. High: `app/api/users/[id]/route.ts`:14 trusts the body.')" ]
 }
 
+@test "parse reads a backticked path with a space in it as one location" {
+  run --separate-stderr parse <<'EOF'
+## Findings
+1. High: `src/My App/Auth.swift:10` trusts the token; see also `src/My App/Auth.swift:10`.
+EOF
+  [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 1 ]
+  [ "${lines[0]}" = "$(printf 'High\tnone\tsrc/My App/Auth.swift\t10\t1. High: `src/My App/Auth.swift:10` trusts the token; see also `src/My App/Auth.swift:10`.')" ]
+}
+
 @test "an unknown verb is a finding naming the verbs there are" {
   run --separate-stderr findings score
   [ "$status" -eq 2 ]
@@ -302,19 +312,22 @@ EOF2
 
 @test "label marks a changed line in a bracketed or non-ASCII path introduced" {
   labelled_repo
-  mkdir -p 'app/[id]'
+  mkdir -p 'app/[id]' 'src/My App'
   printf 'a\n' > 'app/[id]/route.ts'
   printf 'b\n' > $'caf\303\251.py'
+  printf 'c\n' > 'src/My App/Auth.swift'
   git add -A && git commit -q -m paths
   run --separate-stderr label <<'EOF2'
 ## Findings
 1. High: `app/[id]/route.ts:1` trusts the id.
 2. High: `café.py:1` is wrong.
+3. High: `src/My App/Auth.swift:1` trusts the token.
 EOF2
   [ "$status" -eq 0 ]
-  [ "${#lines[@]}" -eq 2 ]
+  [ "${#lines[@]}" -eq 3 ]
   [[ "${lines[0]}" == *$'\t'introduced ]]
   [[ "${lines[1]}" == *$'\t'introduced ]]
+  [[ "${lines[2]}" == *$'\t'introduced ]]
 }
 
 # ship-findings finds awk on PATH, so a fake that dies on label's call, the one
