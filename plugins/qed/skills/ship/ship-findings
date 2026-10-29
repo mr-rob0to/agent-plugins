@@ -114,7 +114,12 @@ parse() {
         l = lines[i]; sub(/^[ \t]*[-*]?[ \t]*/, "", l); l = trim(l)
         if (l == "") continue
         only = locations(l); gsub(SPACE, " ", only)
+        # A bare location may be wrapped in brackets or written as a markdown
+        # link; compare it as the path:line it names. Brackets inside a path,
+        # such as a route folder, stay.
+        gsub(/\]\([^)]*\)/, "]", l)
         gsub(/[`*]/, "", l)
+        if (l ~ /^\[.*\]$/) l = substr(l, 2, length(l) - 2)
         if (l ~ /^Location:/ || (bare && only != "" && only == l)) loc = loc "\n" lines[i]
         bare = 0
       }

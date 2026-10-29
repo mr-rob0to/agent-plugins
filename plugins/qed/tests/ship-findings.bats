@@ -208,6 +208,25 @@ EOF
   [ "${lines[1]}" = "$(printf 'Medium\tWrong winner selected\tsrc/my_api/challenges.py\t405\tMedium')" ]
 }
 
+@test "parse places a severity-only first line by a bare location in brackets or a markdown link on the line under it" {
+  run --separate-stderr parse <<'EOT'
+## Findings
+
+High
+[src/my_api/challenges.py:390]
+Type: Authorization bypass
+
+Medium
+[src/my_api/challenges.py:405](https://example.test/blob/src/my_api/challenges.py#L405)
+Type: Wrong winner selected
+EOT
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
+  [ "${#lines[@]}" -eq 2 ]
+  [ "${lines[0]}" = "$(printf 'High\tAuthorization bypass\tsrc/my_api/challenges.py\t390\tHigh')" ]
+  [ "${lines[1]}" = "$(printf 'Medium\tWrong winner selected\tsrc/my_api/challenges.py\t405\tMedium')" ]
+}
+
 @test "parse refuses a finding with two Location lines" {
   run --separate-stderr parse <<'EOF'
 ## Findings
