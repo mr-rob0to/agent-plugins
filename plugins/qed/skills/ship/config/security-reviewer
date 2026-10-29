@@ -1,3 +1,11 @@
+# A verified SHIP_NATIVE_REVIEW plus SHIP_NATIVE_SECURITY_MODEL can select the
+# qualified model below directly through the host's native tool. Auto otherwise
+# keeps the qualified command route. Code-review capability alone is insufficient.
+# Native selectors use a model directly, never a repository-defined agent name.
+# Model qualification below is existing fixture evidence; it does not claim that
+# the native transport has itself been evaluated. Run the fixtures natively before
+# making that claim. Explicit operator commands still win.
+#
 # The reviewer /ship runs for step 7, the security pass, when the gate is a
 # separate one. A combined gate has no step 7: its one review covers the
 # security areas too, and this value goes unused on that branch. Two shapes:

@@ -35,16 +35,11 @@ first_value() {  # $1 file
   return 1
 }
 
-# Both reviewers are commands, and which command a host can run is not a
-# property of this skill. `auto`, the value both bundled defaults hold, means
-# choose here, on every run, from what this host has. Nothing is written down: a
-# machine that installs codex a week from now starts using it with no edit
-# anywhere, and one that loses it stops naming a command that is not there.
-#
-# The choice is not a silent one. It is only ever made where nobody has stated a
-# preference, an explicit value is never probed, `ship-env reviewer` prints what
-# was chosen before the gate runs, and step 6 makes the pull request name the
-# reviewer that actually ran.
+# auto prefers a native reviewer only when the enclosing harness has verified
+# a fresh isolated subagent tool and advertised its provider for this run.
+# CLI installation and repository-defined agent names are not capabilities.
+# Explicit operator settings still win. The selected transport is printed so
+# the host dispatches it and the PR names what actually ran.
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # Both reviewer commands run with their working directory inside the repository
@@ -181,9 +176,39 @@ author() {  # prints claude, codex, or nothing
 
 note() { printf 'note: %s\n' "$*" >&2; }
 
+# This is a host assertion, not discovery from a project file. SKILL.md requires
+# the host to verify the native tool and selectable model before setting it.
+# Return 1 only when there is no native capability for this phase; malformed
+# assertions and unqualified security models fail closed instead of falling back.
+native_reviewer() {  # $1 reviewer | security-reviewer
+  local provider="${SHIP_NATIVE_REVIEW:-}" model="${SHIP_NATIVE_SECURITY_MODEL:-}"
+  case "$provider" in
+    '') [ -z "$model" ] || finding "SHIP_NATIVE_SECURITY_MODEL needs SHIP_NATIVE_REVIEW"; return 1 ;;
+    codex | claude) ;;
+    *) finding "SHIP_NATIVE_REVIEW must be codex or claude after verifying the native tool" ;;
+  esac
+  if [ "$1" = reviewer ]; then
+    note "the code reviewer is a native $provider subagent; report the actual model and vendor in the PR"
+    printf 'native:%s\n' "$provider"
+    return 0
+  fi
+  [ -n "$model" ] || return 1
+  case "$provider" in
+    codex)
+      case " $tested_sols " in
+        *" $model "*) ;;
+        *) finding "native security model '$model' is not qualified; use a qualified available model" ;;
+      esac ;;
+    claude) [ "$model" = opus ] || finding "native security model '$model' is not qualified; use qualified Opus" ;;
+  esac
+  note "the security reviewer is a native $provider subagent; report the actual model and vendor in the PR"
+  printf 'native:%s:%s\n' "$provider" "$model"
+}
+
 probe() {  # $1 key; prints the command this host can actually run
   local who
   who="$(author)" || exit $?
+  if native_reviewer "$1"; then return 0; fi
   case "$1" in
     # A review from the vendor that did not write the change, where the host
     # has it: Claude for a branch Codex wrote, Codex otherwise. With only the
@@ -385,6 +410,11 @@ case "$cmd" in
   reviewer | security-reviewer)
     [ $# -eq 0 ] || finding "$usage"
     v="$(value "$cmd")" || exit 2
+    case "$v" in
+      native:*)
+        expected="$(native_reviewer "$cmd")" || finding "native selector is unavailable on this host for $cmd"
+        [ "$v" = "$expected" ] || finding "native selector is unavailable on this host for $cmd" ;;
+    esac
     ! agent_hijacked "$v" || finding "the repository being reviewed defines an agent called ${v#agent:}, so the gate cannot tell which definition it would dispatch; remove .claude/agents/${v#agent:}.md from the worktree, or name a command line in $conf/$cmd"
     printf '%s\n' "$v" ;;
   review-mode)

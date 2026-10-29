@@ -10,7 +10,7 @@ setup() {
   # not the operator's ship config, and not their git config.
   mkdir -p "$TEST_HOME/home"
   export HOME="$TEST_HOME/home"
-  unset XDG_CONFIG_HOME
+  unset XDG_CONFIG_HOME SHIP_NATIVE_REVIEW SHIP_NATIVE_SECURITY_MODEL
   # Throwaway repos need an identity; never depend on the machine's git config.
   export GIT_AUTHOR_NAME=qed-test GIT_AUTHOR_EMAIL=qed-test@example.invalid
   export GIT_COMMITTER_NAME=qed-test GIT_COMMITTER_EMAIL=qed-test@example.invalid

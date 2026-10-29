@@ -41,19 +41,25 @@ It never merges. That stays with you.
   know which folder that file is in; if it cannot tell, the gate stops and says
   how to set it.
 
-The gate needs bash, `git`, `jq`, the GitHub CLI `gh` signed in, and a reviewer
-on your `PATH`: `codex`, or failing that `claude`.
+The gate needs bash, `git`, `jq`, and GitHub access. Reviewer execution prefers
+verified native subagent tools in Codex and Claude Code; a reviewer CLI is only
+needed when no native capability is available or the operator explicitly chose
+one. Forge operations may use the enclosing harness's connected GitHub tools
+instead of `gh` when those tools provide the required operation.
 
 ### Choosing the reviewers
 
 Out of the box both reviewers are set to `auto`:
 
-- **Code review:** the vendor that did not write the branch. The gate says
+- **Code review:** a fresh native Sol subagent in Codex or a fresh native Fable
+  subagent in Claude Code when that host actually exposes the required tool.
+  Otherwise, the vendor that did not write the branch. The gate says
   which harness it runs in, so a branch written in Codex goes to Claude Code in
   plan mode, which can read the code but not change it, and any other branch
   goes to `codex`. With only one of them installed, that one reviews, and the
   pull request says when it is the author's own vendor.
-- **Security review:** Claude Code on Opus in plan mode, whoever wrote the
+- **Security review:** a directly selected, qualified native model when the host
+  exposes it; otherwise Claude Code on Opus in plan mode, whoever wrote the
   branch; the pull request says so when the branch is Claude's own. Opus found
   both planted defects in `tests/fixtures/security-review` and invented nothing
   against the clean file. Codex on Sol passed the same fixtures and is the
@@ -68,6 +74,29 @@ ranks first, falling back to `gpt-5.6-sol` with a note when Codex lists none.
 A Sol chosen from that list has no score row of its own (see Scoring a
 reviewer below) and the pull request names it as unscored. The pull request
 names the model that ran either way.
+
+### Native host capabilities
+
+The host, not a repository file or installed CLI, verifies that it can create a
+fresh, read-only reviewer with no inherited conversation or project instructions.
+It then sets `SHIP_NATIVE_REVIEW=codex` or `SHIP_NATIVE_REVIEW=claude` for this run.
+`ship-env reviewer` returns `native:codex` or `native:claude`. The host dispatches
+that selector through its built-in tool, directly by model, never by a
+repository-defined agent name. Explicit operator reviewer commands still win.
+Without a native capability, existing command selection is unchanged.
+
+The host may also set `SHIP_NATIVE_SECURITY_MODEL` when the exact qualified model
+in the bundled security-reviewer note is selectable. `ship-env security-reviewer`
+returns its provider and model in the native selector. Code-review availability
+alone does not qualify a security model, and a newer unqualified model is refused.
+The model's existing qualification does not claim a native-transport evaluation;
+run the security fixtures through that transport before reporting it as evaluated.
+
+Both routes use the same prompts, header validation, finding labels, commit guards
+and fix-pass limit. Native usage is recorded as in-session unless the host supplies
+actual per-run metadata. A failed native dispatch stops the gate; it does not
+silently downgrade to a CLI. Read-only is a reviewer instruction unless the host
+provides an enforced permission boundary; the gate does not claim an OS sandbox.
 
 To choose your own, write a command line into a file:
 

@@ -1070,3 +1070,81 @@ guide_repo() {  # a repository with origin/main; prints nothing, leaves cwd insi
   [ "$status" -eq 2 ]
   [[ "$stderr" == "finding: usage: ship-env "* ]]
 }
+
+@test "a verified Codex native reviewer needs no reviewer CLI" {
+  c="$(auto_copy)"; host
+  AUTHOR_ENV='SHIP_AUTHOR=codex SHIP_NATIVE_REVIEW=codex'
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = native:codex ]
+}
+
+@test "a verified Claude native reviewer wins over installed CLIs" {
+  c="$(auto_copy)"; host codex claude
+  AUTHOR_ENV='SHIP_AUTHOR=claude SHIP_NATIVE_REVIEW=claude'
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = native:claude ]
+}
+
+@test "an explicit command overrides native reviewer availability" {
+  c="$(auto_copy)"; host codex
+  printf 'chosen reviewer\n' > "$(ovr)/reviewer"
+  AUTHOR_ENV='SHIP_NATIVE_REVIEW=codex'
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = 'chosen reviewer' ]
+}
+
+@test "an explicit native selector fails without the matching host capability" {
+  c="$(auto_copy)"; host codex
+  printf 'native:claude\n' > "$(ovr)/reviewer"
+  AUTHOR_ENV='SHIP_NATIVE_REVIEW=codex'
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *'native selector is unavailable'* ]]
+}
+
+@test "unknown native host capability fails rather than choosing a CLI" {
+  c="$(auto_copy)"; host codex
+  AUTHOR_ENV='SHIP_NATIVE_REVIEW=made-up'
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *'SHIP_NATIVE_REVIEW'* ]]
+}
+
+@test "native security selects only a qualified available Codex model" {
+  c="$(auto_copy)"; host
+  AUTHOR_ENV='SHIP_NATIVE_REVIEW=codex SHIP_NATIVE_SECURITY_MODEL=gpt-9.1-sol'
+  run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = native:codex:gpt-9.1-sol ]
+  AUTHOR_ENV='SHIP_NATIVE_REVIEW=codex SHIP_NATIVE_SECURITY_MODEL=gpt-999-sol'
+  run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *'not qualified'* ]]
+}
+
+@test "native Claude security uses qualified Opus without a CLI" {
+  c="$(auto_copy)"; host
+  AUTHOR_ENV='SHIP_NATIVE_REVIEW=claude SHIP_NATIVE_SECURITY_MODEL=opus'
+  run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = native:claude:opus ]
+}
+
+@test "native code availability alone does not qualify a security reviewer" {
+  c="$(auto_copy)"; host
+  AUTHOR_ENV='SHIP_NATIVE_REVIEW=codex'
+  run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *'no security reviewer'* ]]
+}
+
+@test "a project agent definition cannot redirect a native reviewer" {
+  c="$(auto_copy)"; host project-agent
+  AUTHOR_ENV='SHIP_NATIVE_REVIEW=codex'
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = native:codex ]
+}
