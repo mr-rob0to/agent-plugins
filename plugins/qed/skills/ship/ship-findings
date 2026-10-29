@@ -27,15 +27,18 @@ usage="usage: ship-findings parse | label <base> | record [<pass>] | prior"
 #
 # From each block: the severity is the first of Critical, High, Important,
 # Medium or Low on the block's first line, or in the whole block when the first
-# line has none; the location is the first file:line token read the same way,
-# a token being a path holding "/" or "." followed by ":digits" or
-# ":digits-digits", with every backtick and star removed and the brackets
-# around it stripped, the ones inside it kept, since a route file can be named
-# "[id]" and a reviewer can write the file in backticks and the line outside
-# them. Two different
-# severities, or two different locations, on the line or lines that supply them
-# is a refusal and never a guess: the gate cannot label a finding it cannot
-# place. The type is the text after a "Type:" label anywhere in the block.
+# line has none; the location is the first file:line token on the block's
+# first line or on a "Location:" line under it, a token being a path holding
+# "/" or "." followed by ":digits" or ":digits-digits", with every backtick and
+# star removed and the brackets around it stripped, the ones inside it kept,
+# since a route file can be named "[id]" and a reviewer can write the file in
+# backticks and the line outside them. A location written as a markdown link,
+# "[path:line](url)", is read as path:line. The rest of the block is prose: a
+# reviewer cites a second file there for context, and that is not a second
+# location. Two different severities, or two different locations, on the line
+# or lines that supply them is a refusal and never a guess: the gate cannot
+# label a finding it cannot place. The type is the text after a "Type:" label
+# anywhere in the block.
 #
 # Missing header: refusal. Header with nothing under it: refusal. The single
 # line "No findings." under it: nothing printed, exit 0. Absence is never read
@@ -68,6 +71,9 @@ parse() {
     # swapped for a byte no path holds, and emit puts them back once it has
     # counted the locations, which it does by splitting on spaces.
     function locations(line,   n, w, i, t, out, seen, s, a, b, rest, inner) {
+      # A markdown link keeps its text and drops its target, so the path in
+      # the text is the token and the path in the target is not.
+      gsub(/\]\([^)]*\)/, "]", line)
       s = ""
       while ((a = index(line, "`")) > 0) {
         s = s substr(line, 1, a - 1)
@@ -96,8 +102,17 @@ parse() {
       nfound++
       n = split(block, lines, "\n")
       first = lines[1]
-      sev = severities(first); loc = locations(block)
+      sev = severities(first)
       if (sev == "") sev = severities(block)
+      # The first line and every Location: line supply the location, together,
+      # so a title that names one place and a Location: line that names
+      # another still read as two.
+      loc = first
+      for (i = 2; i <= n; i++) {
+        l = lines[i]; sub(/^[ \t]*[-*]?[ \t]*/, "", l); gsub(/[`*_]/, "", l)
+        if (l ~ /^Location:/) loc = loc "\n" lines[i]
+      }
+      loc = locations(loc)
       if (split(sev, parts, " ") > 1) {
         printf "finding: finding %d carries two severities (%s, %s); keep one\n", nfound, parts[1], parts[2] > "/dev/stderr"
         bad = 1; exit 2
