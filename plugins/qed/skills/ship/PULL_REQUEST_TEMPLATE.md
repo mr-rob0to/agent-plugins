@@ -9,7 +9,14 @@ Suggested file order. What needs thought, what is mechanical.
 
 ## Verification
 - Checks: command and result
-- Evidence: screenshot or recording for UI, or why none
+- Evidence: before-and-after screenshots or a short video for visible UI changes,
+  accessible to reviewers; output for command/API changes, or why none
+- Before: link and base revision
+- After: link and feature revision
+- Viewport, sample data, actions and outcomes; local stand-ins or live services
+- Blocker or not applicable: reason and missing evidence
+- Artifact retention / expiry: run URL, tested commit and expiration, or durable PR attachment
+- Generated evidence is not committed; intentional fixtures and visual-regression baselines may be
 - Break-verification: which guard was broken, the failure it printed
 
 ## Reviews

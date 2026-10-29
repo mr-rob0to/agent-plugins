@@ -232,8 +232,48 @@ Check what a diff-only reviewer cannot see:
   why there is none**. A change nobody can see needs the check command and its
   result, which step 8's body requirement already asks for.
 
+For visible UI or interaction changes, use the project's browser tooling to capture
+**before-and-after screenshots or a short video** in a **real browser**. Compare the
+**base and feature revisions** with the **same viewport, sample data, and actions**.
+For interactions, show the action and resulting state, including relevant failure
+states; an initial-state screenshot alone does not demonstrate the change. Include
+phone and desktop views when affected. Do not simulate the old behavior with edited
+images or label feature-only captures as a base comparison.
+
+Embed or link evidence **accessible to PR reviewers** in the PR body. A local path
+alone is not a reviewer-accessible attachment. Label the revisions, viewport, actions,
+and outcomes, and state whether capture used **local stand-ins or live services**.
+Use synthetic accounts and content, excluding **credentials and private user data**.
+**Do not commit generated review recordings**, transient screenshots, test reports
+or diagnostic traces to source control. Generate them in ignored output folders
+such as `test-results/` or `artifacts/`. Keep tests and capture scripts in Git.
+Intentional fixtures and visual-regression baselines that tests compare against
+remain versioned; they are different from one-off review evidence.
+
+Prefer PR attachments for short before-and-after demos that should remain with
+the discussion. Upload automated diagnostics and larger evidence bundles as CI
+artifacts with explicit retention, normally **14–30 days**, following any project
+policy. Record the tested commit, run URL, artifact link, and **artifact expiry**
+in the PR. Expiring artifacts are temporary review evidence, not a permanent
+acceptance archive; attach an important demo to the PR when an upload capability
+is available. Do not put media in Git as a workaround for missing attachment
+support. Use a verified CI artifact instead, or state the upload blocker.
+
+Check staged files and the whole branch history for generated evidence before
+pushing. If such media was already committed, deleting it in a later commit is
+insufficient: remove it from the branch history before merge, with operator
+authorization for the rewrite, preserve others' work, and use a verified lease.
+Do not rewrite shared merged history as routine evidence cleanup. These captures
+do not replace any required deployed-build check.
+
+If capture is blocked, record the **concrete blocker and missing evidence** in the
+PR and leave visual verification pending. For changes without a visible UI effect,
+explain why browser evidence does not apply; command/API output can still need the
+pasted evidence above.
+
 This last one is a body requirement and **not a stop**. A missing screenshot is
-a review finding; it is not a reason to hold the branch.
+a review finding; it is not a reason to hold the branch. Never present missing
+visual verification as passed.
 
 ## Step 6. Independent adversarial review (REQUIRED)
 
@@ -710,7 +750,8 @@ would have picked the same one is a guess.
 Fill the template's own sections. Between them the body must carry: summary of
 the change, test evidence (actual command output, not "tests pass"), **which
 review mode ran and the reason for it**, the review findings with how each was
-resolved, an explicit note when a review came back clean, each review run's
+resolved, an explicit note when a review came back clean, before-and-after browser
+evidence or its stated blocker/not-applicable reason from step 5, each review run's
 `usage:` line from steps 6 and 7, and anything deliberately deferred. **Verbose
 material goes inside `<details>`** so the body stays readable.
 
