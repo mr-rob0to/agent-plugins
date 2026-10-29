@@ -28,7 +28,9 @@ usage="usage: ship-findings parse | label <base> | record [<pass>] | prior"
 # From each block: the severity is the first of Critical, High, Important,
 # Medium or Low on the block's first line, or in the whole block when the first
 # line has none; the location is the first file:line token on the block's
-# first line or on a "Location:" line under it, a token being a path holding
+# first line, on a "Location:" line under it, or on the next line when that
+# line holds nothing but a location, as Codex writes a severity on one line
+# and the place on the next; a token being a path holding
 # "/" or "." followed by ":digits" or ":digits-digits", with every backtick and
 # star removed and the brackets around it stripped, the ones inside it kept,
 # since a route file can be named "[id]" and a reviewer can write the file in
@@ -96,7 +98,7 @@ parse() {
       return out
     }
     function first_of(a, b) { return a != "" ? a : b }
-    function emit(   sev, loc, typ, text, line, i, n, lines, first, whole, s, l, parts, p, file, range, rest) {
+    function emit(   sev, loc, typ, text, line, i, n, lines, first, whole, s, l, bare, only, parts, p, file, range, rest) {
       if (block == "") return
       if (sentinel && nfound == 0 && trim(block) == "No findings.") { block = ""; opener = ""; return }
       nfound++
@@ -104,13 +106,17 @@ parse() {
       first = lines[1]
       sev = severities(first)
       if (sev == "") sev = severities(block)
-      # The first line and every Location: line supply the location, together,
-      # so a title that names one place and a Location: line that names
-      # another still read as two.
-      loc = first
+      # The first line, every Location: line, and a next line that is only a
+      # location supply the location, together, so a title that names one
+      # place and a Location: line that names another still read as two.
+      loc = first; bare = 1
       for (i = 2; i <= n; i++) {
-        l = lines[i]; sub(/^[ \t]*[-*]?[ \t]*/, "", l); gsub(/[`*_]/, "", l)
-        if (l ~ /^Location:/) loc = loc "\n" lines[i]
+        l = lines[i]; sub(/^[ \t]*[-*]?[ \t]*/, "", l); l = trim(l)
+        if (l == "") continue
+        only = locations(l); gsub(SPACE, " ", only)
+        gsub(/[`*]/, "", l)
+        if (l ~ /^Location:/ || (bare && only != "" && only == l)) loc = loc "\n" lines[i]
+        bare = 0
       }
       loc = locations(loc)
       if (split(sev, parts, " ") > 1) {

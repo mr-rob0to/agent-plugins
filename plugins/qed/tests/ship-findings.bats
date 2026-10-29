@@ -188,6 +188,26 @@ EOF
   [ "${lines[0]}" = "$(printf 'High\tMissing invite status check\tsrc/api/routers/v1/results.py\t24\t### High: the participant check accepts any participant row')" ]
 }
 
+@test "parse places a severity-only first line by the bare location on the line under it, and reads a later path as prose" {
+  run --separate-stderr parse <<'EOF'
+## Findings
+
+High  
+`src/my_api/challenges.py:390`  
+Type: Authorization bypass  
+Attack scenario: a declined invitee cancels the competition; the same lookup in `src/my_api/team_challenges.py:648` requires ACCEPTED.  
+
+Medium  
+`src/my_api/challenges.py:405`  
+Type: Wrong winner selected  
+EOF
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
+  [ "${#lines[@]}" -eq 2 ]
+  [ "${lines[0]}" = "$(printf 'High\tAuthorization bypass\tsrc/my_api/challenges.py\t390\tHigh')" ]
+  [ "${lines[1]}" = "$(printf 'Medium\tWrong winner selected\tsrc/my_api/challenges.py\t405\tMedium')" ]
+}
+
 @test "parse refuses a finding with two Location lines" {
   run --separate-stderr parse <<'EOF'
 ## Findings
