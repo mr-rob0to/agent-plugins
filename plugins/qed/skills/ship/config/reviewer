@@ -1,3 +1,9 @@
+# With a verified SHIP_NATIVE_REVIEW capability, auto first returns a native:
+# selector for the enclosing harness to dispatch through its fresh subagent tool.
+# No reviewer CLI is needed for that route; explicit operator commands still win.
+# The host chooses its selectable Sol (Codex) or Fable (Claude) and records it.
+# Native context must be fresh, read-only, and free of repository instructions.
+#
 # The reviewer /ship runs for step 6, the pull request's code review. It is a
 # command line; the review prompt is appended to it as one argument.
 #
@@ -6,7 +12,7 @@
 # the prompt it is given covers the security areas as well. The gate says which
 # mode it ran in, in the pull request body, either way.
 #
-# `auto` means the command is chosen when the gate runs, from what this host
+# Without a verified native capability, `auto` chooses a command from what this host
 # has: codex on the newest Sol it lists when it is on PATH, otherwise Claude Code
 # on the newest Fable in plan mode, which reads the tree and the diff and can
 # change neither. A branch Codex wrote goes to Claude when the host has it. Either way the

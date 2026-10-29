@@ -892,3 +892,73 @@ EOF
     grep -qF 'tests/review-eval/scores.md' "$SKILL_DIR/config/$k"
   done
 }
+
+@test "native review requires an isolated host tool and commit-bound answer" {
+  six="$(unwrapped '/^## Step 6\./,/^## Step 7\./p' "$SHIP_MD")"
+  [[ "$six" == *'SHIP_NATIVE_REVIEW'* ]]
+  [[ "$six" == *'fork_turns="none"'* ]]
+  [[ "$six" == *'Never dispatch a repository-defined agent by name'* ]]
+  [[ "$six" == *'exact same review prompt'* ]]
+  [[ "$six" == *'NATIVE_HEAD'* ]]
+  [[ "$six" == *'usage: in session total'* ]]
+  [[ "$six" == *'never execute a native selector as a shell command'* ]]
+}
+
+native_finish_block() {
+  sed -n '/^### Native reviewer transport/,/^### Command reviewer transport/p' "$SHIP_MD" | awk '
+    /^```bash$/ { inside = 1; text = ""; next }
+    /^```$/ { if (inside && text ~ /HEAD moved during native review/) printf "%s", text; inside = 0; next }
+    inside { text = text $0 "\n" }'
+}
+
+native_fixture() {
+  gate_repo
+  NATIVE_EXPECTED="$(git -C "$GATE_REPO" rev-parse HEAD)"
+  NATIVE_ANSWER="$TEST_HOME/native-answer"
+  printf '## Findings\nNo findings.\n\n## Checked clean\nNo issues.\n' > "$NATIVE_ANSWER"
+}
+
+run_native_finish() {
+  block="$(native_finish_block)"
+  [ -n "$block" ] || { echo 'missing native completion block'; return 1; }
+  ( cd "$GATE_REPO" && env BASE=main SHIP_DIR="$SKILL_DIR" \
+      NATIVE_HEAD="$NATIVE_EXPECTED" ANSWER="$NATIVE_ANSWER" bash -c "$block" )
+}
+
+@test "native completion validates and records an actual answer" {
+  native_fixture
+  run --separate-stderr run_native_finish
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'usage: in session total'* ]]
+  # Read prior from the fixture repository, not this plugin checkout.
+  prior="$(cd "$GATE_REPO" && "$SKILL_DIR/ship-findings" prior)"
+  [[ "$prior" == *'No findings.'* ]]
+}
+
+@test "native completion refuses a changed head" {
+  native_fixture
+  NATIVE_EXPECTED=0000000000000000000000000000000000000000
+  run --separate-stderr run_native_finish
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *'HEAD moved during native review'* ]]
+}
+
+@test "native completion refuses reviewer writes" {
+  native_fixture
+  printf 'reviewer edit\n' >> "$GATE_REPO/new.txt"
+  run --separate-stderr run_native_finish
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *'worktree changed during native review'* ]]
+}
+
+@test "native completion refuses missing or malformed answers" {
+  native_fixture
+  : > "$NATIVE_ANSWER"
+  run --separate-stderr run_native_finish
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *'no native reviewer answer'* ]]
+  printf 'looks good\n' > "$NATIVE_ANSWER"
+  run --separate-stderr run_native_finish
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *'Findings'* ]]
+}
