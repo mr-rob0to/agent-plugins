@@ -912,3 +912,16 @@ EOF
   [[ "$body" == *'Viewport, sample data, actions and outcomes'* ]]
   [[ "$body" == *'Blocker or not applicable: reason and missing evidence'* ]]
 }
+
+@test "generated review media stays outside Git with explicit retention" {
+  five="$(unwrapped '/^## Step 5\./,/^## Step 6\./p' "$SHIP_MD")"
+  [[ "$five" == *'Do not commit generated review recordings'* ]]
+  [[ "$five" == *'PR attachments'* ]]
+  [[ "$five" == *'14–30 days'* ]]
+  [[ "$five" == *'artifact expiry'* ]]
+  [[ "$five" == *'visual-regression baselines'* ]]
+  [[ "$five" == *'branch history'* ]]
+  body="$(cat "$SKILL_DIR/PULL_REQUEST_TEMPLATE.md")"
+  [[ "$body" == *'Artifact retention / expiry'* ]]
+  [[ "$body" == *'Generated evidence is not committed'* ]]
+}

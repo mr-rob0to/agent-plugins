@@ -244,8 +244,26 @@ Embed or link evidence **accessible to PR reviewers** in the PR body. A local pa
 alone is not a reviewer-accessible attachment. Label the revisions, viewport, actions,
 and outcomes, and state whether capture used **local stand-ins or live services**.
 Use synthetic accounts and content, excluding **credentials and private user data**.
-Keep small images in the repository when appropriate; use durable attachments or
-artifacts for larger recordings. Follow the project's retention rules. These captures
+**Do not commit generated review recordings**, transient screenshots, test reports
+or diagnostic traces to source control. Generate them in ignored output folders
+such as `test-results/` or `artifacts/`. Keep tests and capture scripts in Git.
+Intentional fixtures and visual-regression baselines that tests compare against
+remain versioned; they are different from one-off review evidence.
+
+Prefer PR attachments for short before-and-after demos that should remain with
+the discussion. Upload automated diagnostics and larger evidence bundles as CI
+artifacts with explicit retention, normally **14–30 days**, following any project
+policy. Record the tested commit, run URL, artifact link, and **artifact expiry**
+in the PR. Expiring artifacts are temporary review evidence, not a permanent
+acceptance archive; attach an important demo to the PR when an upload capability
+is available. Do not put media in Git as a workaround for missing attachment
+support. Use a verified CI artifact instead, or state the upload blocker.
+
+Check staged files and the whole branch history for generated evidence before
+pushing. If such media was already committed, deleting it in a later commit is
+insufficient: remove it from the branch history before merge, with operator
+authorization for the rewrite, preserve others' work, and use a verified lease.
+Do not rewrite shared merged history as routine evidence cleanup. These captures
 do not replace any required deployed-build check.
 
 If capture is blocked, record the **concrete blocker and missing evidence** in the

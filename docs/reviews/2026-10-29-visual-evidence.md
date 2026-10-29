@@ -25,3 +25,23 @@ account name is an ordinary word used throughout the unchanged plugin documents.
 No files were changed to bypass it. ShellCheck and Claude Code are unavailable,
 so their checks have not run. CI and the full QED ship gate remain pending.
 This instruction/template change has no visible application screen to capture.
+
+## Evidence delivery policy update
+
+The operator subsequently requested that generated review evidence stay out of
+Git history. Step 5 and the bundled PR template now require PR attachments or
+CI artifact links, an explicit 14–30 day retention policy and artifact expiry.
+Tests and capture scripts stay in Git; intentional visual-regression baselines
+and fixtures are exempt from the generated-media rule. A pending branch that
+already contains recordings needs an authorized history rewrite, not merely
+a follow-up deletion. Shared merged history is not rewritten as routine cleanup.
+
+The new contract test was seen failing before the rule was added:
+
+```text
+not ok 1 generated review media stays outside Git with explicit retention
+# [[ "$five" == *'Do not commit generated review recordings'* ]] failed
+```
+
+It passed after implementation. QED version increases to 0.4.2 for this policy
+update. This remains separate from the native-reviewer change.
