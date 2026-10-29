@@ -45,6 +45,15 @@ A row's prompt hash is `prompt=` as `score` printed it. Rows marked
 `historical` predate the scorer and carry no hash; they are outside the rule
 and kept for comparison.
 
+Collection rows from 2026-10-29 carry two numbers when they differ: what
+`score` counted, and what a person counted reading the kept answers by the
+same rule, and dropping a location match whose text names a different bug than the case does. The gap is mostly the parser, not the reviewer: `ship-findings parse`
+refuses a finding whose body mentions a second file and line, and the Claude
+lines write that way often. Both numbers are kept because the gate runs the
+parser, so the first is what the gate would see today, and the second is what
+the reviewer actually found. "Not rerun" in the Public column means the public
+smoke test for that line and hash is the row above it.
+
 ## Rows
 
 | Date | Reviewer command line | Model id | Prompt | Prompt hash | Public | Collection | Run by |
@@ -58,3 +67,7 @@ and kept for comparison.
 | 2026-10-27 | `codex exec -m gpt-5.6-terra --sandbox read-only -c project_doc_max_bytes=0` | gpt-5.6-terra | code | 41a519cabe70ff16b6995a9de524b0fdf482046a91cb12bc787a3b85eaa0bc94 | 1/2, 0 false alarms (the injection finding named line 19, two lines off) | not run | operator |
 | 2026-10-27 | `codex exec -m gpt-5.6-terra --sandbox read-only -c project_doc_max_bytes=0` | gpt-5.6-terra | security | 8bf2fde10ac18f8fc3118f2f902ec8ec82829c6e3980279fa55b25727ac2f7f5 | 2/2, 0 false alarms | not run | operator |
 | 2026-10-27 | `claude -p --safe-mode --disallowedTools WebFetch,WebSearch --model opus --effort high --permission-mode plan` | claude-opus-5-5 | security | 8bf2fde10ac18f8fc3118f2f902ec8ec82829c6e3980279fa55b25727ac2f7f5 | 1/2, 0 false alarms (one answer unparsed: a finding named two locations) | not run | operator |
+| 2026-10-29 | `claude -p --safe-mode --disallowedTools WebFetch,WebSearch --model fable --effort high --permission-mode plan` | claude-fable-5-1 | code | 41a519cabe70ff16b6995a9de524b0fdf482046a91cb12bc787a3b85eaa0bc94 | not rerun | 2/9, 2/5 false alarms (7 of 14 answers unparsed: 6 put a second location inside a finding, 1 came back as a trailing remark with the review text lost; read by hand, 4/9 and 2/5: one location match named a different bug and is not counted) | operator |
+| 2026-10-29 | `codex exec -m gpt-5.6-sol --sandbox read-only -c project_doc_max_bytes=0` | gpt-5.6-sol | code | 41a519cabe70ff16b6995a9de524b0fdf482046a91cb12bc787a3b85eaa0bc94 | not rerun | 4/9, 0/5 false alarms (read by hand, 4/9: one counted hit named the expected lines but a different bug, a concurrency race, and is not counted; one miss wrote its location as a markdown link, which the parser does not read, and is) | operator |
+| 2026-10-29 | `codex exec -m gpt-5.6-sol --sandbox read-only -c project_doc_max_bytes=0` | gpt-5.6-sol | security | 8bf2fde10ac18f8fc3118f2f902ec8ec82829c6e3980279fa55b25727ac2f7f5 | not rerun | 3/9, 2/5 false alarms | operator |
+| 2026-10-29 | `claude -p --safe-mode --disallowedTools WebFetch,WebSearch --model opus --effort high --permission-mode plan` | claude-opus-5-5 | security | 8bf2fde10ac18f8fc3118f2f902ec8ec82829c6e3980279fa55b25727ac2f7f5 | not rerun | 1/9, 2/5 false alarms (10 of 14 answers unparsed: each put a second location inside a finding; read by hand, 6/9 and 1/5) | operator |
