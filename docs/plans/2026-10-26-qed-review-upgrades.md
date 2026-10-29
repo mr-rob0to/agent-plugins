@@ -1,6 +1,6 @@
 # qed ship gate: review upgrades plan
 
-**Where this stands:** approved 2026-10-27; Tasks 1 to 5, 7 and 8 done on branch feat/qed-review-upgrades, through the ship gate / next: Task 6, the operator's collection, in its own session / blocked on: nothing
+**Where this stands:** approved 2026-10-27; Tasks 1 to 5, 7 and 8 merged in PR 6; Task 6 done on branch feat/qed-review-eval-collection, the collection in its own PR in the private repository / next: nothing in this plan; the parser fix the scores point at is a follow-up / blocked on: nothing
 
 **Amendment (2026-10-28, approved by the operator, this milestone's one):** acceptance criterion 6 and Task 3's interface changed after the gate's security review. The guard keeps one commit, `last_review`, written at `fix-pass` only once every phase of the gate's mode has been recorded, so a fix pass before the first audit keeps nothing and that audit still reads the whole branch. Step 7 reads the same `$RANGE` step 6's block set, on the command-line path and the operator-only agent path alike. Also from that review: the step 6 block records an answer only after `label` accepts it, so a refused answer is not sent back as a prior finding.
 
@@ -93,9 +93,9 @@
 ## Task 6: the operator's collection, and the first scoring
 **Files:** create `docs/review-eval/*.case` in the operator's private repository (its own session, branch and PR); modify `tests/review-eval/scores.md` here
 **Interfaces:** consumes Task 5's `.case` format and `score`. The case list is in the side-session notes folder, file `review-eval-private-cases.md`: nine bug cases and five clean commits, with file, line range, category and the sentence a reviewer must report.
-- [ ] Write the fourteen `.case` files, confirming each line range against the introducing commit.
-- [ ] Run `score` on the Claude line as written, the newest tested Sol line, and the Opus security candidate line, for the step 6 prompt and with `--security`. Record each row with the model id the run printed and counts only.
-- [ ] Answer open question 1 from the Opus row and record the answer in this plan's header.
+- [x] Write the fourteen `.case` files, confirming each line range against the introducing commit.
+- [x] Run `score` on the Claude line as written, the newest tested Sol line, and the Opus security candidate line, for the step 6 prompt and with `--security`. Record each row with the model id the run printed and counts only.
+- [x] Answer open question 1 from the Opus row and record the answer in this plan's header.
 **Done when:** `scores.md` holds the rows; each row's prompt hash matches `score`'s output; `make check` is green here; the private PR holds fourteen `.case` files and nothing else.
 
 ## Task 8: Claude Opus as the default security reviewer
@@ -130,6 +130,6 @@
 13. `ship-env security-reviewer` with the bundled `auto` and `claude` on PATH prints the Opus line verbatim; without `claude` exits 2 naming `~/.config/ship/security-reviewer`; a written codex line is returned unchanged.
 
 ## Open questions (answered 2026-10-27)
-1. Opus as a security reviewer: **the operator chose Opus as the default**, replacing codex Sol, which stays available as a written line. Task 8.
+1. Opus as a security reviewer: **the operator chose Opus as the default**, replacing codex Sol, which stays available as a written line. Task 8. Answered again 2026-10-29 from the collection row: **Opus stays the default.** Under the security prompt the scorer counted 1/9 bugs and 2/5 false alarms for Opus, against 3/9 and 2/5 for Sol 5.6, but 10 of Opus's 14 answers were refused by the parser because a finding mentioned a second file and line in its body. Read by hand under the same rule, Opus found 6/9 with 1/5 false alarms, the best of the four runs. The number the gate sees will not mean much until the parser reads a second location in a finding's body as prose, which is the deferred item from PR 6 and the next piece of work.
 2. A pre-existing Critical or High from step 7 is a stop-and-ask. **Approved** (Task 2).
 3. The private cases go in a separate PR to the private repository's base branch under `docs/review-eval/`. **Approved** (Task 6).
