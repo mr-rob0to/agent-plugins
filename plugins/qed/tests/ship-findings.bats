@@ -157,6 +157,98 @@ EOF
   [[ "$stderr" == "finding: finding 1 names two locations (a/b.py:10, a/c.py:20); split it, one location each"* ]]
 }
 
+@test "parse places a finding by its first line and reads a second path in the body as prose" {
+  run --separate-stderr parse <<'EOF'
+## Findings
+
+**1. High: the opponent crew is never compared with the caller's crew (`src/services/challenges.py:127`)**
+- **What's wrong:** nothing stops `team_id == opponent_team_id`. The unique constraint in `models/challenge_team.py:39` makes the second insert fail at the commit on line 347.
+- **Fix:** before line 285, raise HTTP 400 when the two ids are equal.
+EOF
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
+  [ "${#lines[@]}" -eq 1 ]
+  [ "${lines[0]}" = "$(printf 'High\tnone\tsrc/services/challenges.py\t127\t**1. High: the opponent crew is never compared with the caller'\''s crew (`src/services/challenges.py:127`)**')" ]
+}
+
+@test "parse places a heading with no location by its Location line and reads a second path in the body as prose" {
+  run --separate-stderr parse <<'EOF'
+## Findings
+
+### High: the participant check accepts any participant row
+
+Location: `src/api/routers/v1/results.py:24`
+Type: Missing invite status check
+
+The same lookup in `src/services/challenges.py:71` requires ACCEPTED; this one does not.
+EOF
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
+  [ "${#lines[@]}" -eq 1 ]
+  [ "${lines[0]}" = "$(printf 'High\tMissing invite status check\tsrc/api/routers/v1/results.py\t24\t### High: the participant check accepts any participant row')" ]
+}
+
+@test "parse places a severity-only first line by the bare location on the line under it, and reads a later path as prose" {
+  run --separate-stderr parse <<'EOF'
+## Findings
+
+High  
+`src/my_api/challenges.py:390`  
+Type: Authorization bypass  
+Attack scenario: a declined invitee cancels the competition; the same lookup in `src/my_api/team_challenges.py:648` requires ACCEPTED.  
+
+Medium  
+`src/my_api/challenges.py:405`  
+Type: Wrong winner selected  
+EOF
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
+  [ "${#lines[@]}" -eq 2 ]
+  [ "${lines[0]}" = "$(printf 'High\tAuthorization bypass\tsrc/my_api/challenges.py\t390\tHigh')" ]
+  [ "${lines[1]}" = "$(printf 'Medium\tWrong winner selected\tsrc/my_api/challenges.py\t405\tMedium')" ]
+}
+
+@test "parse places a severity-only first line by a bare location in brackets or a markdown link on the line under it" {
+  run --separate-stderr parse <<'EOT'
+## Findings
+
+High
+[src/my_api/challenges.py:390]
+Type: Authorization bypass
+
+Medium
+[src/my_api/challenges.py:405](https://example.test/blob/src/my_api/challenges.py#L405)
+Type: Wrong winner selected
+EOT
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
+  [ "${#lines[@]}" -eq 2 ]
+  [ "${lines[0]}" = "$(printf 'High\tAuthorization bypass\tsrc/my_api/challenges.py\t390\tHigh')" ]
+  [ "${lines[1]}" = "$(printf 'Medium\tWrong winner selected\tsrc/my_api/challenges.py\t405\tMedium')" ]
+}
+
+@test "parse refuses a finding with two Location lines" {
+  run --separate-stderr parse <<'EOF'
+## Findings
+### High: both lookups trust the header
+Location: `a/b.py:10`
+Location: `a/c.py:20`
+EOF
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [[ "$stderr" == "finding: finding 1 names two locations (a/b.py:10, a/c.py:20); split it, one location each"* ]]
+}
+
+@test "parse reads a location written as a markdown link" {
+  run --separate-stderr parse <<'EOF'
+## Findings
+High: [src/api/routers/v1/results.py:24](/tmp/clone/src/api/routers/v1/results.py:24) authorizes any participant record.
+EOF
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
+  [ "${lines[0]}" = "$(printf 'High\tnone\tsrc/api/routers/v1/results.py\t24\tHigh: [src/api/routers/v1/results.py:24](/tmp/clone/src/api/routers/v1/results.py:24) authorizes any participant record.')" ]
+}
+
 @test "parse refuses a finding that carries two different severity words" {
   run --separate-stderr parse <<'EOF'
 ## Findings
