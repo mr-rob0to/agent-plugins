@@ -892,3 +892,23 @@ EOF
     grep -qF 'tests/review-eval/scores.md' "$SKILL_DIR/config/$k"
   done
 }
+
+@test "visible UI evidence compares base and feature revisions in a real browser" {
+  five="$(unwrapped '/^## Step 5\./,/^## Step 6\./p' "$SHIP_MD")"
+  [[ "$five" == *'before-and-after screenshots or a short video'* ]]
+  [[ "$five" == *'same viewport, sample data, and actions'* ]]
+  [[ "$five" == *'base and feature revisions'* ]]
+  [[ "$five" == *'real browser'* ]]
+  [[ "$five" == *'local stand-ins or live services'* ]]
+  [[ "$five" == *'accessible to PR reviewers'* ]]
+  [[ "$five" == *'concrete blocker and missing evidence'* ]]
+  [[ "$five" == *'credentials and private user data'* ]]
+}
+
+@test "bundled PR template asks for before and after evidence and capture context" {
+  body="$(cat "$SKILL_DIR/PULL_REQUEST_TEMPLATE.md")"
+  [[ "$body" == *'Before: link and base revision'* ]]
+  [[ "$body" == *'After: link and feature revision'* ]]
+  [[ "$body" == *'Viewport, sample data, actions and outcomes'* ]]
+  [[ "$body" == *'Blocker or not applicable: reason and missing evidence'* ]]
+}
