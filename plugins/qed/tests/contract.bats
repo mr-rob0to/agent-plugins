@@ -487,6 +487,57 @@ EOF
   [[ "$eight" == *'Do not retry'* ]]
 }
 
+# The cleanup block as the skill carries it, against a stand-in gh. GH_VIEW is the
+# body GitHub holds; an edit is copied to edited, and to GH_VIEW with GH_READD's
+# text added when the stand-in plays the proxy.
+cleanup() {  # $1 ship-env to use
+  local d="$TEST_HOME/cleanup"; mkdir -p "$d/bin"
+  cat > "$d/bin/gh" <<'GH'
+#!/bin/bash
+case "$2" in
+  view) [ -z "${GH_VIEW_FAILS:-}" ] || exit 1; cat "$GH_VIEW" ;;
+  edit) cp "$4" "$GH_DIR/edited"; { cat "$4"; printf '%s' "${GH_READD:-}"; } > "$GH_VIEW" ;;
+esac
+GH
+  chmod +x "$d/bin/gh"
+  local n; n="$(grep -nF 'CURRENT="$(mktemp)"; CLEAN="$(mktemp)"' "$SHIP_MD" | cut -d: -f1)"
+  sed -n "$((n - 1)),/^\`\`\`\$/p" "$SHIP_MD" | sed '$d' > "$d/block"
+  GH_DIR="$d" GH_VIEW="$d/view" SHIP_ENV="$1" PATH="$d/bin:$PATH" bash "$d/block"
+}
+FOOTED='Body
+<!-- ship-attestation:v1 -->
+
+Generated with Claude Code'
+
+@test "the cleanup block removes the footer with one edit" {
+  mkdir -p "$TEST_HOME/cleanup"; printf '%s\n' "$FOOTED" > "$TEST_HOME/cleanup/view"
+  run --separate-stderr cleanup "$SKILL_DIR/ship-env"
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
+  [ "$(cat "$TEST_HOME/cleanup/edited")" = "$(printf 'Body\n<!-- ship-attestation:v1 -->')" ]
+}
+
+@test "the cleanup block reports a footer the proxy puts back" {
+  mkdir -p "$TEST_HOME/cleanup"; printf '%s\n' "$FOOTED" > "$TEST_HOME/cleanup/view"
+  GH_READD=$'\nGenerated with Claude Code\n' run --separate-stderr cleanup "$SKILL_DIR/ship-env"
+  [ "$status" -eq 0 ]
+  [ "$stderr" = "note: the footer is still on the pull request" ]
+}
+
+@test "the cleanup block never edits the body when the helper fails" {
+  mkdir -p "$TEST_HOME/cleanup"; printf '%s\n' "$FOOTED" > "$TEST_HOME/cleanup/view"
+  run --separate-stderr cleanup "$TEST_HOME/no-such-ship-env"
+  [ "$status" -ne 0 ]
+  [ ! -e "$TEST_HOME/cleanup/edited" ]
+}
+
+@test "the cleanup block stops when the body cannot be read" {
+  mkdir -p "$TEST_HOME/cleanup"; printf '%s\n' "$FOOTED" > "$TEST_HOME/cleanup/view"
+  GH_VIEW_FAILS=1 run --separate-stderr cleanup "$SKILL_DIR/ship-env"
+  [ "$status" -ne 0 ]
+  [ ! -e "$TEST_HOME/cleanup/edited" ]
+}
+
 @test "step 9's body edit and the docs-only path follow step 8's body rule" {
   nine="$(unwrapped '/^## Step 9\./,/^## Stop and report/p' "$SHIP_MD")"
   [[ "$nine" == *'How a body reaches GitHub'* ]]

@@ -800,18 +800,20 @@ step 9's, and the docs-only path. The `gh` lines in this skill are the form used
    the footer with one last edit:
 
 ```bash
+set -e
 CURRENT="$(mktemp)"; CLEAN="$(mktemp)"
 gh pr view --json body --jq .body > "$CURRENT"
 "$SHIP_ENV" strip-body-footer < "$CURRENT" > "$CLEAN"
 if ! cmp -s "$CURRENT" "$CLEAN"; then
   gh pr edit --body-file "$CLEAN"
   gh pr view --json body --jq .body > "$CURRENT"
-  "$SHIP_ENV" strip-body-footer < "$CURRENT" | cmp -s - "$CURRENT" \
-    || echo "note: the footer is still on the pull request" >&2
+  "$SHIP_ENV" strip-body-footer < "$CURRENT" > "$CLEAN"
+  cmp -s "$CURRENT" "$CLEAN" || echo "note: the footer is still on the pull request" >&2
 fi
 ```
 
-That last edit also goes through `gh`, so the proxy can add the footer again. Do not retry: tell the
+`set -e` is what protects the body: a failed read or a failed helper stops the block before an
+empty file can replace it. That last edit also goes through `gh`, so the proxy can add the footer again. Do not retry: tell the
 operator the footer is still there and that it needs removing by hand or a connector.
 
 No attribution lines go in any body, title or comment this skill writes.

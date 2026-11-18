@@ -1108,6 +1108,33 @@ $ATTEST"
   [ "$output" = "$body" ]
 }
 
+@test "strip-body-footer removes the footer form that links elsewhere" {
+  c="$(skill_copy)"
+  run --separate-stderr env_at "$c" strip-body-footer <<<"Text
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+  [ "$status" -eq 0 ]
+  [ "$output" = "Text" ]
+}
+
+# The attestation is the last line and carries a free-text reason, so a loose
+# match would delete it and turn the required check red.
+@test "strip-body-footer keeps a last line that only mentions the footer or the link" {
+  c="$(skill_copy)"
+  for last in \
+    '<!-- ship-attestation:v1 review_reason="edits the claude.ai/code/session footer" -->' \
+    '<!-- ship-attestation:v1 review_reason="Generated with Claude Code" -->' \
+    'See https://claude.ai/code/docs for the install steps.'; do
+    run --separate-stderr env_at "$c" strip-body-footer <<<"Text
+
+$last"
+    [ "$status" -eq 0 ]
+    [ "$output" = "Text
+
+$last" ]
+  done
+}
+
 @test "strip-body-footer leaves a body with no footer byte for byte" {
   c="$(skill_copy)"
   printf 'Text\n\n%s\n\n\n' "$ATTEST" > "$TEST_HOME/body"
