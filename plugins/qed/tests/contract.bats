@@ -464,6 +464,36 @@ EOF
   [[ "$nine" == *'Rebuild means rebuild, not append'* ]]
 }
 
+# A cloud session's network proxy adds a "Generated with Claude Code" footer to
+# a body written through gh. Connector tools are left alone, so they go first.
+@test "step 8 prefers the GitHub connector for every body it writes" {
+  eight="$(unwrapped '/^## Step 8\./,/^## Step 9\./p' "$SHIP_MD")"
+  [[ "$eight" == *'How a body reaches GitHub'* ]]
+  [[ "$eight" == *'create-pull-request tool'* ]]
+  [[ "$eight" == *'update-pull-request tool'* ]]
+  [[ "$eight" == *'instead of `gh`'* ]]
+  [[ "$eight" == *'exact contents of `$BODY`'* ]]
+  [[ "$eight" == *'No attribution lines'* ]]
+}
+
+@test "a body written through gh is re-saved or cleaned, and a failed cleanup is reported" {
+  eight="$(unwrapped '/^## Step 8\./,/^## Step 9\./p' "$SHIP_MD")"
+  [[ "$eight" == *'re-save the final body once through it'* ]]
+  [[ "$eight" == *'"$SHIP_ENV" strip-body-footer < "$CURRENT" > "$CLEAN"'* ]]
+  [[ "$eight" == *'gh pr edit --body-file "$CLEAN"'* ]]
+  # The proxy may add the footer to the cleaning edit too, so the result is read
+  # back and a footer that survived is reported, never retried in a loop.
+  [[ "$eight" == *'the footer is still on the pull request'* ]]
+  [[ "$eight" == *'Do not retry'* ]]
+}
+
+@test "step 9's body edit and the docs-only path follow step 8's body rule" {
+  nine="$(unwrapped '/^## Step 9\./,/^## Stop and report/p' "$SHIP_MD")"
+  [[ "$nine" == *'How a body reaches GitHub'* ]]
+  docs="$(unwrapped '/^\*\*Docs-only changes skip the gate/,/^## Step 0\./p' "$SHIP_MD")"
+  [[ "$docs" == *'How a body reaches GitHub'* ]]
+}
+
 # ---- the gate's review block -----------------------------------------------------
 # Step 6 carries the block that runs a reviewer, and step 7 runs the same block.
 # It runs here as the skill carries it, through the real ship-env reading the
