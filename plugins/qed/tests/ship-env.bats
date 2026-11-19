@@ -182,7 +182,7 @@ auto_copy() {  # prints the copied folder
   run --separate-stderr env_at "$c" models
   [ "$status" -eq 2 ]
   [ -z "$output" ]
-  [ "$stderr" = "finding: unknown key 'models' (reviewer, security-reviewer, review-mode, review-guide, pr-template, pr-template-fallback, usage)" ]
+  [ "$stderr" = "finding: unknown key 'models' (reviewer, security-reviewer, review-mode, review-guide, pr-template, pr-template-fallback, strip-body-footer, usage)" ]
   # --root was a key in an earlier copy of this gate. It has no use here, so it is gone.
   run --separate-stderr env_at "$c" --root
   [ "$status" -eq 2 ]
@@ -1067,6 +1067,84 @@ guide_repo() {  # a repository with origin/main; prints nothing, leaves cwd insi
   c="$(skill_copy)"
   guide_repo
   run --separate-stderr env_at "$c" review-guide
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == "finding: usage: ship-env "* ]]
+}
+
+# ---- strip-body-footer ------------------------------------------------------
+# A cloud session's network proxy adds a footer to a body written through gh.
+# Only that footer goes: the attestation above it has to survive byte for byte.
+ATTEST='<!-- ship-attestation:v1 head_sha=abc -->'
+
+@test "strip-body-footer removes the footer and session link under the attestation" {
+  c="$(skill_copy)"
+  body="$(printf '## Summary\n\nText\n\n%s' "$ATTEST")"
+  run --separate-stderr env_at "$c" strip-body-footer <<<"$body
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+https://claude.ai/code/session_0123"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '## Summary\n\nText\n\n%s' "$ATTEST")" ]
+}
+
+@test "strip-body-footer removes the plain-text form of the footer" {
+  c="$(skill_copy)"
+  run --separate-stderr env_at "$c" strip-body-footer <<<"Text
+
+Generated with Claude Code"
+  [ "$status" -eq 0 ]
+  [ "$output" = "Text" ]
+}
+
+@test "strip-body-footer keeps the same words when they are not at the end" {
+  c="$(skill_copy)"
+  body="Generated with Claude Code is what the old footer said.
+See https://claude.ai/code for the docs.
+
+$ATTEST"
+  run --separate-stderr env_at "$c" strip-body-footer <<<"$body"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$body" ]
+}
+
+@test "strip-body-footer removes the footer form that links elsewhere" {
+  c="$(skill_copy)"
+  run --separate-stderr env_at "$c" strip-body-footer <<<"Text
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+  [ "$status" -eq 0 ]
+  [ "$output" = "Text" ]
+}
+
+# The attestation is the last line and carries a free-text reason, so a loose
+# match would delete it and turn the required check red.
+@test "strip-body-footer keeps a last line that only mentions the footer or the link" {
+  c="$(skill_copy)"
+  for last in \
+    '<!-- ship-attestation:v1 review_reason="edits the claude.ai/code/session footer" -->' \
+    '<!-- ship-attestation:v1 review_reason="Generated with Claude Code" -->' \
+    'See https://claude.ai/code/docs for the install steps.'; do
+    run --separate-stderr env_at "$c" strip-body-footer <<<"Text
+
+$last"
+    [ "$status" -eq 0 ]
+    [ "$output" = "Text
+
+$last" ]
+  done
+}
+
+@test "strip-body-footer leaves a body with no footer byte for byte" {
+  c="$(skill_copy)"
+  printf 'Text\n\n%s\n\n\n' "$ATTEST" > "$TEST_HOME/body"
+  env_at "$c" strip-body-footer < "$TEST_HOME/body" > "$TEST_HOME/out"
+  cmp "$TEST_HOME/body" "$TEST_HOME/out"
+}
+
+@test "strip-body-footer takes no arguments" {
+  c="$(skill_copy)"
+  run --separate-stderr env_at "$c" strip-body-footer extra </dev/null
   [ "$status" -eq 2 ]
   [[ "$stderr" == "finding: usage: ship-env "* ]]
 }

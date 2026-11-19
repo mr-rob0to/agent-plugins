@@ -12,7 +12,7 @@ set -u
 
 finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 
-usage="usage: ship-env reviewer | security-reviewer | review-mode <claim> <sensitive> | review-guide <base> | pr-template <repo> | pr-template-fallback | usage"
+usage="usage: ship-env reviewer | security-reviewer | review-mode <claim> <sensitive> | review-guide <base> | pr-template <repo> | pr-template-fallback | strip-body-footer | usage"
 
 # pwd -P resolves a skill folder installed as a link, so the bundled files are
 # read from the real folder and not from wherever the link sits.
@@ -379,6 +379,28 @@ codex_usage() {
   '
 }
 
+# A pull request body on stdin, without the "Generated with Claude Code" footer
+# and claude.ai session link a cloud session's network proxy adds to the end of
+# a body written through gh. A line goes only when it is the end of the body and
+# nothing but the footer or the link, so an attestation or a sentence that merely
+# mentions them stays, and a body with no footer comes back unchanged.
+strip_body_footer() {
+  awk '
+    { line[NR] = $0 }
+    END {
+      last = NR; found = 0
+      while (last > 0) {
+        if (line[last] ~ /^[^[:alnum:]]*Generated with (Claude Code|\[Claude Code\]\([^)]*\))[.[:space:]]*$/ ||
+            line[last] ~ /^[[:space:]]*(https:\/\/claude\.ai\/code\/session[^[:space:]]*|\[[^]]*\]\(https:\/\/claude\.ai\/code\/session[^)]*\))[[:space:]]*$/) found = 1
+        else if (line[last] !~ /^[[:space:]]*$/) break
+        last--
+      }
+      if (!found) last = NR
+      for (i = 1; i <= last; i++) print line[i]
+    }
+  '
+}
+
 cmd="${1:-}"; shift || true
 case "$cmd" in
   '') finding "$usage" ;;
@@ -401,9 +423,12 @@ case "$cmd" in
     [ -f "$here/PULL_REQUEST_TEMPLATE.md" ] \
       || finding "no bundled pull request template at $here/PULL_REQUEST_TEMPLATE.md"
     printf '%s\n' "$here/PULL_REQUEST_TEMPLATE.md" ;;
+  strip-body-footer)
+    [ $# -eq 0 ] || finding "$usage"
+    strip_body_footer ;;
   usage)
     [ $# -eq 0 ] || finding "$usage"
     codex_usage ;;
-  *) finding "unknown key '$cmd' (reviewer, security-reviewer, review-mode, review-guide, pr-template, pr-template-fallback, usage)" ;;
+  *) finding "unknown key '$cmd' (reviewer, security-reviewer, review-mode, review-guide, pr-template, pr-template-fallback, strip-body-footer, usage)" ;;
 esac
 exit 0

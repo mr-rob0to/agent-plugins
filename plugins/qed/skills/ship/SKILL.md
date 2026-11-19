@@ -22,7 +22,8 @@ or, worse, becomes the excuse to skip the gate and lose the classification with 
 
 **Docs-only changes skip the gate entirely.** If every file the branch touches is prose that nothing
 reads but a human — `.md`, comments, design mockups — stop here, open the PR or edit the one step 8's
-lookup finds, and say the gate was skipped as docs-only. It is *not* docs-only the moment it touches anything the build, the
+lookup finds, writing the body by step 8's "How a body reaches GitHub" (find `$SHIP_ENV` as step 0
+does if it needs the cleanup), and say the gate was skipped as docs-only. It is *not* docs-only the moment it touches anything the build, the
 tests, or CI consume: a manifest, a workflow, a Makefile, a build config, a script, a generated
 contract such as `contracts/openapi.json`. When in doubt, run the gate.
 
@@ -760,7 +761,8 @@ commit after `$BASE`.
 
 `gh pr create` refuses a branch that already has an open pull request, and a branch shipped again
 after review feedback has exactly that. So look it up first: edit its body, keeping the title the
-operator has seen, and open one only when there is none.
+operator has seen, and open one only when there is none. Either write follows "How a body reaches
+GitHub" below.
 
 ```bash
 TITLE="${SHIP_TITLE:-$(git log --format=%s "origin/$BASE..HEAD" | tail -n 1)}"
@@ -774,11 +776,47 @@ fi
 
 **Every later push rebuilds the body and edits the pull request**, step 9's
 included. The attestation names the commit that is actually out there, so a body
-left behind after a fix pass names a commit that is no longer the head.
+left behind after a fix pass names a commit that is no longer the head. These edits follow "How a
+body reaches GitHub" too.
 
 ```bash
 gh pr edit --title "$TITLE" --body-file "$BODY"
 ```
+
+### How a body reaches GitHub
+
+In a Claude Code cloud session, the network proxy adds a "Generated with Claude Code" footer and a
+session link to any pull request or issue body written through `gh` (`gh pr create`, `gh pr edit`,
+`gh api`). Bodies written through GitHub connector (MCP) tools are left alone, and local sessions
+are not affected. This rule covers every body this skill writes: the first one, every later edit,
+step 9's, and the docs-only path. The `gh` lines in this skill are the form used when rule 2 applies.
+
+1. **A create-pull-request tool or update-pull-request tool is available.** Use it instead of `gh`
+   for the write it covers. Pass the same title, base and head branch the `gh` line would, and the
+   exact contents of `$BODY` as the body, attestation included. Reading with `gh` is fine: the
+   footer is only added to writes. Without `gh`, use the connector's own lookup.
+2. **Only `gh` can make the write.** Run the `gh` line, then finish once. If an
+   update-pull-request tool exists, re-save the final body once through it. If none exists, remove
+   the footer with one last edit:
+
+```bash
+set -e
+CURRENT="$(mktemp)"; CLEAN="$(mktemp)"
+gh pr view --json body --jq .body > "$CURRENT"
+"$SHIP_ENV" strip-body-footer < "$CURRENT" > "$CLEAN"
+if ! cmp -s "$CURRENT" "$CLEAN"; then
+  gh pr edit --body-file "$CLEAN"
+  gh pr view --json body --jq .body > "$CURRENT"
+  "$SHIP_ENV" strip-body-footer < "$CURRENT" > "$CLEAN"
+  cmp -s "$CURRENT" "$CLEAN" || echo "note: the footer is still on the pull request" >&2
+fi
+```
+
+`set -e` is what protects the body: a failed read or a failed helper stops the block before an
+empty file can replace it. That last edit also goes through `gh`, so the proxy can add the footer again. Do not retry: tell the
+operator the footer is still there and that it needs removing by hand or a connector.
+
+No attribution lines go in any body, title or comment this skill writes.
 
 ## Step 9. CI
 
@@ -817,7 +855,7 @@ git push --force-with-lease="refs/heads/$BRANCH:$REMOTE" origin "HEAD:refs/heads
 ```
 
 Then rebuild the body over the new head and edit the pull request, exactly as
-step 8 did. A fix pass moved `HEAD`, so the attestation in the open pull request
+step 8 did, by the rule in step 8's "How a body reaches GitHub". A fix pass moved `HEAD`, so the attestation in the open pull request
 now names a commit that is not the one being tested.
 
 **Rebuild means rebuild, not append.** Write the prose into `$BODY` again from
